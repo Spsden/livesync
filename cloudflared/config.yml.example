@@ -1,0 +1,44 @@
+# Cloudflare Tunnel ingress for live-sync.
+#
+# Two supported shapes:
+#
+#   1. Dedicated subdomain (recommended)
+#      https://livesync.example.com  →  127.0.0.1:3002
+#      No BASE_PATH, no prefix to strip, no interaction with other hostnames.
+#
+#   2. Under a path on an existing hostname
+#      https://example.com/livesync  →  127.0.0.1:3002
+#      Requires BASE_PATH=/livesync in the client BUILD and in the server
+#      environment, because cloudflared matches on the path but forwards the
+#      full path unstripped. This rule must also come before the hostname's
+#      catch-all rule, since rules are first-match.
+#
+# Locally-managed tunnel:
+#
+#   cloudflared tunnel create live-sync
+#   cp cloudflared/config.yml.example ~/.cloudflared/config.yml   # edit placeholders
+#   cloudflared tunnel ingress validate
+#   cloudflared tunnel ingress rule https://livesync.example.com/api/health
+#   cloudflared tunnel run live-sync
+#
+# A remotely-managed (token) tunnel expresses the same thing in the dashboard:
+# Routes → Add route → Published application.
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /home/<you>/.cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  # --- 1. dedicated subdomain (default) ---
+  - hostname: livesync.example.com
+    service: http://127.0.0.1:3002
+
+  # --- 2. path variant: uncomment, and delete the subdomain rule above ---
+  # - hostname: example.com
+  #   path: ^/livesync(/|$)
+  #   service: http://127.0.0.1:3002
+
+  # Whatever already owns the hostname (portfolio, another app).
+  - hostname: example.com
+    service: http://127.0.0.1:3000
+
+  - service: http_status:404
