@@ -4,26 +4,20 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
+import { HomePage } from './routes/home'
 import { RootLayout } from './routes/root'
 import { RoomPage } from './routes/room'
 import { BASE_PATH } from './base'
 import { ROOM_RE } from './constants'
-import { uid } from './ui'
 
 const rootRoute = createRootRoute({ component: RootLayout })
 
-// "/" is not a page: it mints a room id and replaces the history entry, so the
-// notepad always has a shareable URL and back does not land on a throwaway id.
+// "/" is the landing page: it explains the product and mints an id on demand,
+// so a first-time visitor is never dropped into an empty room with no context.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => {
-    throw redirect({
-      to: '/n/$roomId',
-      params: { roomId: uid(6) },
-      replace: true,
-    })
-  },
+  component: HomePage,
 })
 
 const roomRoute = createRoute({

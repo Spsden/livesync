@@ -9,12 +9,13 @@ import { FilesPanel } from './FilesPanel'
 import { TabBar } from './TabBar'
 import { Toast } from './Toast'
 import { TopBar } from './TopBar'
-import { FILES_OPEN_KEY, NAME_KEY, NOTICE_KEY } from '../constants'
+import { FILES_OPEN_KEY, NAME_KEY, NOTICE_KEY, ONBOARDED_KEY } from '../constants'
 import { deleteRemoteFile, deleteRemoteNotepad } from '../files-api'
 import { usePresenceUsers } from '../hooks/usePresenceUsers'
 import { useProviderStatus } from '../hooks/useProviderStatus'
 import { useUploader } from '../hooks/useUploader'
 import { useYArray } from '../hooks/useYArray'
+import { useYTextHasContent } from '../hooks/useYTextHasContent'
 import { pickColor, uid } from '../ui'
 import type { FileMeta, PresenceUser, TabMeta } from '../types'
 
@@ -46,6 +47,11 @@ export function Notepad({ room, doc, provider }: Props) {
   const [gone, setGone] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // Onboarding is a once-per-browser thing: someone opening a shared link for
+  // the first time sees how it works; regulars never do again.
+  const [onboarded, setOnboarded] = useState(
+    () => localStorage.getItem(ONBOARDED_KEY) === '1',
+  )
 
   const notify = useCallback((message: string) => {
     setToast({ id: Date.now(), message })
@@ -208,7 +214,7 @@ export function Notepad({ room, doc, provider }: Props) {
   }
 
   const startNew = () => {
-    void navigate({ to: '/' })
+    void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
   }
 
   const toggleFiles = () => {
@@ -254,7 +260,7 @@ export function Notepad({ room, doc, provider }: Props) {
     try {
       await deleteRemoteNotepad(room)
       sessionStorage.setItem(NOTICE_KEY, 'Notepad deleted')
-      void navigate({ to: '/' })
+      void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
     } catch (error) {
       setDeleting(false)
       setConfirmDelete(false)
@@ -315,6 +321,21 @@ export function Notepad({ room, doc, provider }: Props) {
   const activeTab = activeId
     ? (tabList.find((tab) => tab.id === activeId) ?? null)
     : null
+  const activeText = activeTab ? doc.getText(`tab:${activeTab.id}`) : null
+  const activeHasContent = useYTextHasContent(activeText)
+
+  const dismissIntro = () => {
+    localStorage.setItem(ONBOARDED_KEY, '1')
+    setOnboarded(true)
+  }
+
+  const showIntro =
+    !onboarded &&
+    !gone &&
+    !activeHasContent &&
+    tabList.length === 1 &&
+    fileList.length === 0 &&
+    (tabList[0]?.title ?? 'untitled') === 'untitled'
 
   if (gone) {
     return (
@@ -356,24 +377,63 @@ export function Notepad({ room, doc, provider }: Props) {
       />
 
       <div className="workspace">
-        {activeTab ? (
-          <Editor
-            key={activeTab.id}
-            ytext={doc.getText(`tab:${activeTab.id}`)}
-            awareness={provider.awareness}
-            undoManager={undoManagerFor(activeTab.id)}
-          />
-        ) : (
-          <div className="editor-host">
-            <div className="empty-state">
-              <p className="empty-title">No tabs here</p>
-              <p className="empty-sub">Create one and start dumping.</p>
-              <button type="button" className="btn-primary" onClick={createTab}>
-                New tab
-              </button>
+        <div className="editor-wrap">
+          {activeTab ? (
+            <Editor
+              key={activeTab.id}
+              ytext={doc.getText(`tab:${activeTab.id}`)}
+              awareness={provider.awareness}
+              undoManager={undoManagerFor(activeTab.id)}
+            />
+          ) : (
+            <div className="editor-host">
+              <div className="empty-state">
+                <p className="empty-title">No tabs here</p>
+                <p className="empty-sub">Create one and start dumping.</p>
+                <button type="button" className="btn-primary" onClick={createTab}>
+                  New tab
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {showIntro && (
+            <aside className="intro-card" aria-label="How this notepad works">
+              <button
+                type="button"
+                className="intro-close"
+                aria-label="Dismiss"
+                onClick={dismissIntro}
+              >
+                ×
+              </button>
+              <p className="intro-title">This notepad is live</p>
+              <ul className="intro-list">
+                <li>
+                  <strong>Type</strong> — edits sync as you go.
+                </li>
+                <li>
+                  <strong>Share the link</strong> — anyone with it can join.
+                </li>
+                <li>
+                  <strong>Drop files</strong> anywhere to attach them.
+                </li>
+              </ul>
+              <div className="intro-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void copyLink()}
+                >
+                  Copy link
+                </button>
+                <button type="button" className="btn-ghost" onClick={dismissIntro}>
+                  Got it
+                </button>
+              </div>
+            </aside>
+          )}
+        </div>
 
         <FilesPanel
           open={filesOpen}

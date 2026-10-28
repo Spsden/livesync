@@ -417,11 +417,83 @@ body {
   overflow: hidden;
 }
 
-.editor-host {
+.editor-wrap {
   position: relative;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
+}
+
+.editor-host {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------- first run --- */
+
+.intro-card {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  z-index: 5;
+  width: min(420px, calc(100% - 32px));
+  padding: 16px 18px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+}
+
+.intro-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.intro-close:hover {
+  color: var(--text);
+  background: var(--bg-elev-2);
+}
+
+.intro-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.intro-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.intro-list strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.intro-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .cm-editor {
@@ -447,6 +519,67 @@ body {
 .empty-sub {
   margin: 0 0 6px;
   font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- home --- */
+
+.home {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 40px 22px;
+}
+
+.home-inner {
+  width: min(560px, 100%);
+}
+
+.home-brand {
+  margin: 0 0 30px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.home-title {
+  margin: 0 0 14px;
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.home-lede {
+  max-width: 46ch;
+  margin: 0 0 26px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.home-cta {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.home-steps {
+  margin: 34px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 2;
+}
+
+.home-steps strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.home-foot {
+  margin: 30px 0 0;
+  color: var(--faint);
+  font-size: 12px;
 }
 
 /* ---------------------------------------------------------------- files --- */
