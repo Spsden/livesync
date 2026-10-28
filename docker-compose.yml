@@ -1,0 +1,67 @@
+name: live-sync
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        BASE_PATH: ${BASE_PATH:-}
+    image: live-sync:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "3000"
+      BASE_PATH: ${BASE_PATH:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-livesync}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-livesync}
+      DATA_DIR: /data
+      MAX_FILE_BYTES: ${MAX_FILE_BYTES:-26214400}
+    # Localhost only. Public access arrives through the tunnel, never this port.
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    volumes:
+      - app_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-livesync}
+      POSTGRES_USER: ${POSTGRES_USER:-livesync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Exposed on localhost only, so `npm start` can run outside Docker during
+    # development. Not needed by the compose stack itself.
+    ports:
+      - "127.0.0.1:${PG_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Only runs with `--profile tunnel`, so local dev needs no Cloudflare account.
+  # An empty token only fails when this profile is actually enabled.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.5
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+
+volumes:
+  app_data:
+  pgdata:
