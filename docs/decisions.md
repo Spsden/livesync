@@ -147,8 +147,9 @@ state. "Use TanStack" is ambiguous across Router, Query, Start and Table.
 
 **Consequences.**
 
-- Route-level concerns (`/`, `/n/$roomId`, id minting, malformed-id rejection)
-  are declarative and typed. The router's `basepath` handles path mounting.
+- Route-level concerns (a `/` landing page, `/n/$roomId`, id minting on
+  demand, malformed-id rejection) are declarative and typed. The router's
+  `basepath` handles path mounting.
 - Live state is Yjs, not an HTTP cache: there is nothing to invalidate, so Query
   would wrap a single upload mutation in ceremony.
 - The app is websocket-first with a raw HTTP upgrade handler; SSR and server

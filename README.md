@@ -3,7 +3,7 @@
 A shared notepad you reach by URL. Paste a link into any machine, get one
 notepad with tabs, live multi-cursor editing, and file attachments. No accounts.
 
-- One URL = one notepad: `/n/<id>`. Opening `/` mints a fresh id.
+- One URL = one notepad: `/n/<id>`. The home page explains it and creates one.
 - Tabs are real, independent documents — add, rename, reorder, close.
 - Text syncs as you type; contributors merge offline edits on reconnect.
 - Drop or paste files (images, PDFs, logs) and they appear for everyone live.

@@ -66,7 +66,7 @@ not committed because it needs a browser binary and would add a heavy optional
 dependency. The checklist it automated, in order, is worth reproducing before a
 release:
 
-1. `/` mints a room and replaces the URL with `/n/<12 hex>`.
+1. `/` shows the landing page; "Create a notepad" navigates to `/n/<12 hex>`.
 2. Editor mounts, exactly one bootstrap tab, connection dot reads `connected`.
 3. Typing in context A appears in context B (separate browser contexts, so no
    `BroadcastChannel` shortcut).

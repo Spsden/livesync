@@ -89,8 +89,8 @@ the tombstone.
 
 ### `GET /`, `GET /n/:room`
 
-Serve the SPA shell (`dist/client/index.html`). Every `/n/<id>` renders the same
-app; the id is read client-side.
+Serve the SPA shell (`dist/client/index.html`). `/` renders the landing page;
+every `/n/<id>` renders the notepad, with the id read client-side.
 
 ### WebSocket `GET /ws/:room` (upgrade)
 
