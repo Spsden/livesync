@@ -36,6 +36,19 @@ export function pickColor(seed: string): string {
   return PALETTE[hash % PALETTE.length] ?? PALETTE[0]!
 }
 
+export function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const minutes = Math.round((Date.now() - then) / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(iso).toLocaleDateString()
+}
+
 const ADJECTIVES = [
   'quiet', 'brave', 'lucky', 'rapid', 'clever', 'gentle', 'solid', 'bright',
   'calm', 'witty', 'swift', 'kind', 'bold', 'neat', 'plain', 'silent',

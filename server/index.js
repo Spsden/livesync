@@ -5,7 +5,7 @@ import express from 'express'
 import { WebSocketServer } from 'ws'
 
 import { config, isValidRoom } from './config.js'
-import { migrate, pool, isRoomDeleted } from './db.js'
+import { migrate, pool, isRoomDeleted, listRooms } from './db.js'
 import { filesRouter, initFiles, removeBlobs } from './files.js'
 import { collectOrphanBlobs } from './gc.js'
 import {
@@ -49,6 +49,27 @@ router.get('/api/health', async (_req, res) => {
     res.json({ ok: true, rooms: roomCount() })
   } catch (err) {
     res.status(503).json({ ok: false, error: String(err) })
+  }
+})
+
+// Public directory of notepads their participants chose to list. Read-only,
+// and it never returns document state — see docs/architecture.md.
+router.get('/api/rooms', async (req, res) => {
+  const query = String(req.query.q ?? '').trim().slice(0, 64)
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
+
+  try {
+    const rows = await listRooms(query, limit)
+    res.json({
+      rooms: rows.map((row) => ({
+        room: row.room,
+        name: row.name,
+        updatedAt: row.updated_at,
+      })),
+    })
+  } catch (err) {
+    console.error('[rooms] directory query failed:', err)
+    res.status(500).json({ error: 'directory unavailable' })
   }
 })
 

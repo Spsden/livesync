@@ -1,7 +1,13 @@
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness.js'
 import { config } from './config.js'
-import { loadRoomState, saveRoomState, deleteRoomRecords } from './db.js'
+import {
+  loadRoomState,
+  saveRoomState,
+  deleteRoomRecords,
+  ensureRoom,
+  saveRoomMeta,
+} from './db.js'
 import { sendSyncUpdate, sendAwareness } from './sync.js'
 
 /** Close code for "this notepad no longer exists". y-websocket treats 4400-4499
@@ -39,6 +45,14 @@ export function getRoom(name) {
   return pending
 }
 
+function readMeta(doc) {
+  const meta = doc.getMap('meta')
+  const raw = meta.get('name')
+  const name =
+    typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 80) : 'untitled'
+  return { name, listed: meta.get('listed') === true }
+}
+
 async function createRoom(name) {
   const doc = new Y.Doc()
   const awareness = new Awareness(doc)
@@ -48,6 +62,7 @@ async function createRoom(name) {
     awareness,
     conns: new Set(),
     timer: null,
+    metaTimer: null,
     /** In-flight save, awaited before deleting so it can't resurrect the row. */
     saving: null,
     deleted: false,
@@ -58,6 +73,17 @@ async function createRoom(name) {
   // Applied before the update listener is attached: restoring state must not
   // count as a change, or every cold start would immediately rewrite the row.
   if (stored) Y.applyUpdate(doc, stored, 'db')
+
+  // Directory read model. Seeded on first load, then mirrored whenever the
+  // name or listing flag changes. Debounced because a rename commits on blur,
+  // but a client is free to write the map more often.
+  const initialMeta = readMeta(doc)
+  try {
+    await ensureRoom(name, initialMeta.name, initialMeta.listed)
+  } catch (err) {
+    console.error(`[rooms] could not seed directory row for ${name}:`, err)
+  }
+  doc.getMap('meta').observe(() => scheduleMetaSave(room))
 
   doc.on('update', (update, origin) => {
     if (room.deleted) return
@@ -80,6 +106,18 @@ async function createRoom(name) {
   })
 
   return room
+}
+
+function scheduleMetaSave(room) {
+  if (room.deleted) return
+  if (room.metaTimer) clearTimeout(room.metaTimer)
+  room.metaTimer = setTimeout(() => {
+    room.metaTimer = null
+    const { name, listed } = readMeta(room.doc)
+    saveRoomMeta(room.name, name, listed).catch((err) =>
+      console.error(`[rooms] meta save for ${room.name} failed:`, err),
+    )
+  }, 500)
 }
 
 function scheduleSave(room) {
@@ -139,6 +177,10 @@ export async function deleteRoom(name) {
     if (room.timer) {
       clearTimeout(room.timer)
       room.timer = null
+    }
+    if (room.metaTimer) {
+      clearTimeout(room.metaTimer)
+      room.metaTimer = null
     }
 
     for (const conn of room.conns) {

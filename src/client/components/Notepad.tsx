@@ -16,6 +16,8 @@ import { useProviderStatus } from '../hooks/useProviderStatus'
 import { useUploader } from '../hooks/useUploader'
 import { useYArray } from '../hooks/useYArray'
 import { useYTextHasContent } from '../hooks/useYTextHasContent'
+import { setNotepadListed, setNotepadName, useNotepadMeta } from '../meta'
+import { rememberRoom } from '../recents'
 import { pickColor, uid } from '../ui'
 import type { FileMeta, PresenceUser, TabMeta } from '../types'
 
@@ -34,6 +36,7 @@ export function Notepad({ room, doc, provider }: Props) {
   const fileList = useYArray(files)
   const users = usePresenceUsers(provider.awareness)
   const status = useProviderStatus(provider)
+  const meta = useNotepadMeta(doc)
 
   /** Undo is per tab; one shared stack would let a tab undo another's edits. */
   const undoManagers = useRef(new Map<string, Y.UndoManager>())
@@ -45,6 +48,10 @@ export function Notepad({ room, doc, provider }: Props) {
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [gone, setGone] = useState(false)
+  // Name and listing live in the document, so both controls are meaningless
+  // until the first sync lands. Before that the meta map looks empty and the
+  // toggle would offer "Listed" for an already-listed notepad.
+  const [ready, setReady] = useState(provider.synced)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   // Onboarding is a once-per-browser thing: someone opening a shared link for
@@ -58,6 +65,20 @@ export function Notepad({ room, doc, provider }: Props) {
   }, [])
 
   const { pending, upload } = useUploader(room, files, notify)
+
+  useEffect(() => {
+    const onSync = (isSynced: boolean) => setReady(isSynced)
+    provider.on('sync', onSync)
+    return () => provider.off('sync', onSync)
+  }, [provider])
+
+  useEffect(() => {
+    rememberRoom(room, meta.name)
+  }, [room, meta.name])
+
+  useEffect(() => {
+    document.title = `${meta.name} · live-sync`
+  }, [meta.name])
 
   useEffect(() => {
     if (!toast) return
@@ -217,6 +238,12 @@ export function Notepad({ room, doc, provider }: Props) {
     void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
   }
 
+  const toggleListed = () => {
+    const next = !meta.listed
+    setNotepadListed(doc, next)
+    notify(next ? 'Listed in the directory' : 'Removed from the directory')
+  }
+
   const toggleFiles = () => {
     setFilesOpen((open) => {
       localStorage.setItem(FILES_OPEN_KEY, String(!open))
@@ -355,6 +382,8 @@ export function Notepad({ room, doc, provider }: Props) {
     <div className={`shell${dragging ? ' is-dragging' : ''}`}>
       <TopBar
         room={room}
+        name={meta.name}
+        listed={meta.listed}
         users={users}
         status={status}
         filesCount={fileList.length}
@@ -364,6 +393,9 @@ export function Notepad({ room, doc, provider }: Props) {
         onToggleFiles={toggleFiles}
         onRenameSelf={renameSelf}
         onDeleteNotepad={() => setConfirmDelete(true)}
+        onRename={(name) => setNotepadName(doc, name)}
+        onToggleListed={toggleListed}
+        ready={ready}
       />
 
       <TabBar

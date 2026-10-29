@@ -91,6 +91,38 @@ try {
   assert(seen, 'peer name is visible via awareness')
   console.log('awareness propagated')
 
+  // --- directory read model ---
+  // name/listed live in the Yjs meta map and are mirrored into Postgres; the
+  // directory must reflect that mirror, not the document.
+  docA.getMap('meta').set('name', 'smoke directory')
+  docA.getMap('meta').set('listed', true)
+  await wait(1500)
+
+  const listed = await (await fetch(`${base}/api/rooms?q=smoke%20directory`)).json()
+  assert(
+    listed.rooms.some((entry) => entry.room === room),
+    'listed notepad appears in the directory',
+  )
+  assert(
+    listed.rooms.find((entry) => entry.room === room)?.name === 'smoke directory',
+    'directory shows the notepad name',
+  )
+
+  const byId = await (await fetch(`${base}/api/rooms?q=${room.slice(0, 6)}`)).json()
+  assert(
+    byId.rooms.some((entry) => entry.room === room),
+    'directory search matches an id prefix',
+  )
+
+  docA.getMap('meta').set('listed', false)
+  await wait(1500)
+  const unlisted = await (await fetch(`${base}/api/rooms?q=smoke%20directory`)).json()
+  assert(
+    !unlisted.rooms.some((entry) => entry.room === room),
+    'unlisted notepad disappears from the directory',
+  )
+  console.log('directory: listing, search and unlisting')
+
   // --- files ---
   const meta = await upload('smoke.txt', 'smoke test body')
   assert(meta.name === 'smoke.txt', 'upload keeps the original filename')

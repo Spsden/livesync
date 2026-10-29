@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { BASE_PATH } from '../base'
 import type { PresenceUser } from '../types'
 import { initials } from '../ui'
 
 type Props = {
   room: string
+  name: string
+  listed: boolean
   users: PresenceUser[]
   status: string
   filesCount: number
@@ -13,10 +16,15 @@ type Props = {
   onToggleFiles: () => void
   onRenameSelf: () => void
   onDeleteNotepad: () => void
+  onRename: (name: string) => void
+  onToggleListed: () => void
+  ready: boolean
 }
 
 export function TopBar({
   room,
+  name,
+  listed,
   users,
   status,
   filesCount,
@@ -26,14 +34,63 @@ export function TopBar({
   onToggleFiles,
   onRenameSelf,
   onDeleteNotepad,
+  onRename,
+  onToggleListed,
+  ready,
 }: Props) {
   const visible = users.slice(0, 5)
+  const [draft, setDraft] = useState(name)
+
+  // Remote renames and reconnects must not fight the local draft.
+  useEffect(() => setDraft(name), [name])
+
+  const commit = () => {
+    const next = draft.trim()
+    if (next && next !== name) onRename(next)
+    else setDraft(name)
+  }
 
   return (
     <header className="topbar">
-      <a className="brand" href={`${BASE_PATH}/`} title="Start a new notepad">
+      <a className="brand" href={`${BASE_PATH}/`} title="Back to the home page">
         live-sync
       </a>
+
+      <input
+        className="notepad-name"
+        value={draft}
+        maxLength={80}
+        spellCheck={false}
+        aria-label="Notepad name"
+        placeholder={ready ? 'Untitled notepad' : 'Loading…'}
+        disabled={!ready}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.currentTarget.blur()
+          } else if (event.key === 'Escape') {
+            setDraft(name)
+            event.currentTarget.blur()
+          }
+        }}
+      />
+
+      <button
+        type="button"
+        className={`btn-ghost listed-toggle${listed ? ' is-on' : ''}`}
+        aria-pressed={listed}
+        disabled={!ready}
+        title={
+          listed
+            ? 'Listed in the public directory — click to unlist'
+            : 'Add this notepad to the public directory'
+        }
+        onClick={onToggleListed}
+      >
+        {listed ? 'Listed' : 'Unlisted'}
+      </button>
 
       <button
         type="button"
