@@ -7,6 +7,8 @@ notepad with tabs, live multi-cursor editing, and file attachments. No accounts.
 - Tabs are real, independent documents — add, rename, reorder, close.
 - Text syncs as you type; contributors merge offline edits on reconnect.
 - Drop or paste files (images, PDFs, logs) and they appear for everyone live.
+- Name a notepad and publish it to an opt-in, searchable directory — or keep it
+  unlisted and reachable only by its link.
 - Everything persists until someone deletes it. Deleting really deletes.
 
 ## Documentation

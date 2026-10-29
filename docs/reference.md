@@ -21,6 +21,24 @@ Reports database reachability and how many rooms are resident in memory.
 `rooms` counts **loaded** rooms (open or still inside the idle window), not stored
 notepads.
 
+### `GET /api/rooms?q=&limit=`
+
+The public directory: only notepads whose participants marked them **listed**.
+
+```json
+{ "rooms": [ { "room": "7f84f42f13b5", "name": "Quarterly plans",
+               "updatedAt": "2026-10-29T01:02:46.382Z" } ] }
+```
+
+| Param | Meaning |
+| --- | --- |
+| `q` | Optional. Max 64 chars. Matches the name as a substring, or the room id as a prefix |
+| `limit` | 1–50, default 20 |
+
+Ordered by last activity. The query joins `rooms` to `ydoc_state.updated_at` and
+**never selects `ydoc_state.state`** — a directory page must not pull Yjs
+snapshots into memory.
+
 ### `POST /api/rooms/:room/files`
 
 Uploads one file. `multipart/form-data`, single field named `file`.
@@ -160,6 +178,17 @@ CREATE TABLE deleted_rooms (
   room       text PRIMARY KEY,
   deleted_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- directory read model; name/listed are mirrored from the Yjs meta map
+CREATE TABLE rooms (
+  room       text PRIMARY KEY,
+  name       text NOT NULL DEFAULT 'untitled',
+  listed     boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  listed_at  timestamptz
+);
+CREATE INDEX rooms_listed_idx ON rooms (listed, listed_at DESC);
+-- plus a GIN trigram index on name when pg_trgm is available
 ```
 
 `ydoc_state.state` is `Y.encodeStateAsUpdate(doc)`. There is no delta log and no
@@ -187,3 +216,9 @@ revision history.
   sessions.
 - **Health is shallow.** It checks `SELECT 1`, not disk space or blob
   readability.
+- **Listing is a capability decision, not a privacy one.** Anyone holding a link
+  can mark that notepad as listed; the directory publishes the room id to
+  everyone. Listing is off by default.
+- **A notepad only appears once it has been opened by the current server.** The
+  directory joins `ydoc_state`, so rooms with content but no `rooms` row (from
+  before the directory existed) show up only after their next visit.

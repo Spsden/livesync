@@ -236,3 +236,63 @@ application.
 - No audit trail of who changed what.
 - Rate limiting and abuse handling are absent; an edge policy is the intended
   lever.
+
+---
+
+## ADR-011: Opt-in directory with a Postgres read model
+
+**Status:** accepted
+
+**Context.** People wanted to find a notepad they had made or been given without
+keeping the link. But the room id *is* the permission in this system: publishing
+ids makes every listed notepad readable, editable and deletable by anyone. Rooms
+also had no name at all, only tabs.
+
+**Decision.** The notepad's `name` and a `listed` flag live in a `meta` map in
+the Yjs document. The server mirrors them into a small `rooms` table on a 500 ms
+debounce and serves `GET /api/rooms?q=` over that table, joined to
+`ydoc_state.updated_at` for recency. `listed` defaults to false. Search matches
+name substrings and id prefixes. The directory query never reads
+`ydoc_state.state`. A `pg_trgm` GIN index is created when the server is allowed
+to, and skipped with a warning when it is not.
+
+**Consequences.**
+
+- Discovery is explicit and reversible; unlisted notepads behave exactly as
+  before, and the capability model is untouched for them.
+- Publishing is itself a capability action: anyone holding the link can list or
+  unlist. That is consistent, but worth knowing.
+- The read model can lag by the debounce; a rename may take ~500 ms to appear.
+- Notepads predating the table have no `rooms` row until they are next opened.
+- Search is a sequential scan without `pg_trgm`; acceptable for a personal
+  instance, and the documented upgrade path is the trigram index plus keyset
+  pagination past a few thousand rooms.
+
+---
+
+## ADR-012: PINs are creation-time only
+
+**Status:** accepted, not yet implemented
+
+**Context.** A PIN sounds like a small feature but is an ownership model
+decision. In a capability system anyone who can open a room could set one —
+including a stranger with the link, who could then lock the creator out. A PIN
+that gates only the editor is also theatre: the file URL, the upload endpoint
+and the unauthenticated delete endpoint would all bypass it.
+
+**Decision.** When implemented, a PIN is set **only when creating** a notepad.
+Verification uses a signed, `HttpOnly`, per-room cookie issued by
+`POST /api/rooms/:room/unlock`, and every surface checks it: WebSocket upgrade,
+file download, upload, file delete and notepad delete. `pin_version` is bumped
+on rotation to invalidate outstanding cookies. Hashing uses a slow KDF with a
+per-room salt, PINs must be 6+ digits, and unlock attempts are rate limited per
+room and per IP. The slow KDF is why the rate limit is mandatory: it is the only
+CPU-bound path an anonymous caller can reach.
+
+**Consequences.**
+
+- No ownership model is introduced; existing notepads cannot be retro-locked.
+- A PIN does not encrypt anything. The server can read all content, and anyone
+  who already has the notepad open can copy it.
+- Brute force resistance comes from length plus rate limiting, not from the PIN
+  alone: 4 digits is ~17 minutes of guessing at 10 requests/second.

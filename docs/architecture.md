@@ -109,6 +109,7 @@ One `Y.Doc` per notepad, replicated to every open client:
 
 ```
 Y.Doc
+├── meta          Y.Map<{ name, listed }>     (notepad title, directory opt-in)
 ├── tabs          Y.Array<{ id: string, title: string }>
 ├── tab:<id>      Y.Text                      (one per tab)
 └── files         Y.Array<{ id, name, mime, size }>
@@ -126,6 +127,9 @@ Why this shape:
   socket as text. No second channel, no polling. The bytes are *not* in Yjs.
 - **Ids are generated client-side** (`crypto.getRandomValues`), so creating a
   tab works while offline; the merge resolves collisions.
+- **`meta` is the notepad's own identity**, not tab content: its title and
+  whether it is published to the directory. Both sync like anything else, which
+  gives live renames and lets the server mirror them.
 
 Root-level key naming is part of the schema: `tab:` prefixes are load-bearing.
 Renaming a root key is a data migration.
@@ -136,6 +140,7 @@ Renaming a root key is a data migration.
 ydoc_state    (room text PK, state bytea, updated_at timestamptz)
 room_files    (id text PK, room text, name text, mime text, size bigint, created_at)
 deleted_rooms (room text PK, deleted_at timestamptz)
+rooms         (room text PK, name, listed, created_at, listed_at)
 ```
 
 - `ydoc_state.state` is `Y.encodeStateAsUpdate(doc)` — the entire merged
@@ -254,7 +259,19 @@ Close code **4404** is in the 4400–4499 range that `y-websocket` treats as
 permanent: clients stop reconnecting and surface "deleted" instead of retrying
 into a fresh, empty notepad.
 
-### 8.6 Reconnecting to a dead URL
+### 8.6 Listing in the directory
+
+`meta.name` and `meta.listed` live in the document, so a rename or a publish
+toggle propagates live and works offline. The server keeps a **read model** for
+search: a `Y.Map` observer debounces 500 ms and upserts `rooms(name, listed)`.
+The directory query joins that table to `ydoc_state.updated_at` and never reads
+the snapshot column.
+
+Opt-in is the whole safety story: publishing a notepad reveals its room id, and
+the id is the only permission this system has. `listed` therefore defaults to
+false and nothing is discoverable until a participant chooses it.
+
+### 8.7 Reconnecting to a dead URL
 
 Tombstone checked before load → connection closed 4404 → no room is created.
 This is what stops a stale tab, a same-browser BroadcastChannel peer, or a
@@ -341,6 +358,10 @@ Until one of those exists, `instances: 1` is a correctness setting.
 - **Transport.** TLS terminates at Cloudflare; the origin is loopback-only.
 - **Optional hardening.** Cloudflare Access in front of the hostname adds
   identity without touching application code.
+- **The directory inverts the model, so it is opt-in.** Every listed notepad's
+  id becomes public, which means readable, editable and deletable by anyone.
+  Search matches names and id prefixes; it is a discovery aid, not a permission
+  boundary.
 
 ## 14. Observability
 
