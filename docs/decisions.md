@@ -323,3 +323,41 @@ endpoint, no schema, no index.
 - No cross-notepad search. That is a different feature, and it collides with the
   capability model unless it is opt-in (the directory) or operator-gated.
 - Tab titles and bodies are searched; attachment filenames are not (yet).
+
+---
+
+## ADR-014: Password-gated notepads, set at creation
+
+**Status:** accepted
+
+**Context.** The directory made notepad ids discoverable, and an id is a
+capability: knowing it means reading, editing and deleting. The goal was for
+public notepads to be *findable but not enterable* without a password. A prompt
+in the browser would be theatre — the websocket, file URLs and the delete
+endpoint would all bypass it.
+
+**Decision.**
+
+- A password is set only when the notepad is created (`POST /api/rooms`). No
+  ownership model, nobody can lock participants out later.
+- Stored as a scrypt hash with a per-room salt and a `pin_version`.
+- Unlocking is `POST /api/rooms/:room/unlock`, which sets a signed, `HttpOnly`,
+  per-room cookie; the cookie carries the room and version.
+- Enforcement covers every surface: websocket upgrade (close `4403`), file
+  download, upload, file delete and notepad delete.
+- **Listing requires a password.** `listed` is forced false unless `pin_hash`
+  exists, in both the write path and the directory query.
+- Unlocks are rate limited (5 failures / 5 minutes per IP and room), because the
+  slow KDF is otherwise a cheap CPU exhaustion vector.
+
+**Consequences.**
+
+- Public listings are safe to browse: names and ids are public, content is not.
+- No password recovery. A forgotten password means the content is inaccessible,
+  and even deletion requires it; the operator's only escape hatch is SQL.
+- The unlock cookie is a bearer credential; so is the password if it is shared
+  carelessly. Neither is encryption — the server can read all content.
+- Setting `COOKIE_SECRET` is required in practice, or every restart invalidates
+  unlocks.
+- Rate limiting is in-memory and per IP, so a restart clears it and a distributed
+  attack is only partially covered.

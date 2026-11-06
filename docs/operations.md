@@ -47,6 +47,7 @@ HOST=127.0.0.1          # loopback only; cloudflared connects locally
 DATA_DIR=./data
 DB_PORT=5433            # wherever Postgres is reachable from this host
 BASE_PATH=              # empty: dedicated subdomain
+COOKIE_SECRET=<openssl rand -hex 32>   # otherwise restarts log everyone out
 ```
 
 Verify before involving the edge:
@@ -192,6 +193,18 @@ Removes state, file rows, blobs and live connections; writes a tombstone.
 ```sh
 docker compose exec -T postgres psql -U livesync -d livesync \
   -c "delete from deleted_rooms where room = '<room>'"
+```
+
+**A password-protected notepad** cannot be deleted through the API without its
+unlock cookie — that is deliberate. If the password is lost, remove it as the
+operator:
+
+```sh
+docker compose exec -T postgres psql -U livesync -d livesync \
+  -c "delete from ydoc_state where room = '<room>'" \
+  -c "delete from room_files where room = '<room>'" \
+  -c "delete from rooms where room = '<room>'"
+rm -f data/files/<blob-id>   # if it had attachments
 ```
 
 **Wipe everything** (irreversible):

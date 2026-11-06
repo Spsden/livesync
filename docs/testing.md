@@ -52,6 +52,12 @@ In-notepad search is **not** covered by the smoke test — it never talks to the
 server, so only the browser checklist exercises it. Keep that in mind when
 changing `src/client/search.ts`: the protocol tests will not notice.
 
+It also covers password-gated notepads: a created notepad starts locked, its
+websocket is refused with `4403` without a cookie, a wrong password is rejected,
+the unlock cookie is `HttpOnly`, upload and delete are refused without it, and a
+listed locked notepad appears in the directory with `locked: true`. Six bad
+attempts return `429`.
+
 The smoke test also covers the directory read model end to end: it renames the
 notepad through the `meta` map, sets `listed`, and asserts the notepad appears
 via `GET /api/rooms` by name **and** by id prefix, then that unlisting removes
@@ -97,10 +103,14 @@ release:
 12. Ctrl/Cmd+F opens the notepad search; a misspelled query finds text in a
     different tab; the hit shows a highlighted snippet; opening it switches tabs;
     Escape closes the palette.
-13. At 390px wide there is no horizontal overflow: the top bar collapses to
+13. Create a notepad with a password: the creator is not asked for it, the
+    notepad can be listed, the directory shows a lock, and a clean browser is
+    asked for the password before the editor appears. A wrong password is
+    rejected. A notepad created without a password cannot be listed.
+14. At 390px wide there is no horizontal overflow: the top bar collapses to
     share/search/menu, the menu reaches rename, listing, files, new and delete,
     the files drawer closes, and the search placeholder is not clipped.
-14. No console errors or unhandled page errors in either context.
+15. No console errors or unhandled page errors in either context.
 
 Recipe if you want to rebuild it: `npm i -D playwright-core`, point `CHROME` at a
 Chromium/Chrome binary (or `npx playwright install chromium` once), drive two

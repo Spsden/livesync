@@ -9,6 +9,8 @@ notepad with tabs, live multi-cursor editing, and file attachments. No accounts.
 - Drop or paste files (images, PDFs, logs) and they appear for everyone live.
 - Name a notepad and publish it to an opt-in, searchable directory — or keep it
   unlisted and reachable only by its link.
+- Protect a notepad with a password at creation. Public listings always require
+  it; the lock covers the editor, attachments and deletion.
 - Everything persists until someone deletes it. Deleting really deletes.
 
 ## Documentation

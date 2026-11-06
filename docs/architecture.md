@@ -140,7 +140,8 @@ Renaming a root key is a data migration.
 ydoc_state    (room text PK, state bytea, updated_at timestamptz)
 room_files    (id text PK, room text, name text, mime text, size bigint, created_at)
 deleted_rooms (room text PK, deleted_at timestamptz)
-rooms         (room text PK, name, listed, created_at, listed_at)
+rooms         (room text PK, name, listed, created_at, listed_at,
+               pin_hash, pin_salt, pin_version)
 ```
 
 - `ydoc_state.state` is `Y.encodeStateAsUpdate(doc)` — the entire merged
@@ -182,6 +183,11 @@ Break one of these and the failure is silent data loss, not an error.
   updates metadata.** A half-updated array is a visible glitch for everyone.
 - **I9 — Room ids are validated before touching SQL or the filesystem.**
   `[A-Za-z0-9_-]{1,64}`, enforced at every boundary.
+- **I10 — A password is checked before the document is loaded**, and on every
+  surface that reads or mutates it: websocket, file download, upload, file
+  delete, notepad delete. A lock that misses one surface is not a lock.
+- **I11 — Publishing requires a password.** The directory exposes names and ids;
+  discoverability must never imply access.
 
 ## 8. Flows
 
@@ -271,13 +277,36 @@ Opt-in is the whole safety story: publishing a notepad reveals its room id, and
 the id is the only permission this system has. `listed` therefore defaults to
 false and nothing is discoverable until a participant chooses it.
 
-### 8.7 Reconnecting to a dead URL
+### 8.7 Password-gated notepads
+
+A password is set **when the notepad is created** (`POST /api/rooms`), so no
+ownership model is needed and nobody can lock participants out later. It is
+stored as a scrypt hash with a per-room salt.
+
+Unlocking is an HTTP exchange, not a websocket message: `POST
+/api/rooms/:room/unlock` verifies the password and sets a signed, `HttpOnly`,
+per-room cookie. The cookie carries the room and `pin_version`, so bumping the
+version invalidates every outstanding unlock.
+
+The client checks `GET /api/rooms/:room/access` **before creating the
+websocket**, so a locked notepad never mounts the editor (which would otherwise
+bootstrap a local tab that merges in after unlocking). A 4403 close on a later
+reconnect means the cookie expired; the page reloads into the unlock screen.
+
+`listed` is forced false unless `pin_hash` exists, in both the mirror write and
+the directory query. The directory therefore contains only password-protected
+notepads, and opening one from the list lands on the password screen.
+
+The slow KDF is why unlocking is rate limited (5 failures / 5 minutes per IP and
+room): it is the only CPU-bound path an anonymous caller can reach.
+
+### 8.8 Reconnecting to a dead URL
 
 Tombstone checked before load → connection closed 4404 → no room is created.
 This is what stops a stale tab, a same-browser BroadcastChannel peer, or a
 client that was briefly offline from pushing a cached copy back.
 
-### 8.8 In-notepad search
+### 8.9 In-notepad search
 
 Search is entirely local. `Cmd/Ctrl+F` opens a palette that walks the tab list,
 reads each `Y.Text` from the local replica, and scores:
@@ -377,9 +406,12 @@ Until one of those exists, `instances: 1` is a correctness setting.
 - **Optional hardening.** Cloudflare Access in front of the hostname adds
   identity without touching application code.
 - **The directory inverts the model, so it is opt-in.** Every listed notepad's
-  id becomes public, which means readable, editable and deletable by anyone.
-  Search matches names and id prefixes; it is a discovery aid, not a permission
-  boundary.
+  id becomes public. That is why listing requires a password: the id alone is no
+  longer sufficient to read, edit or delete it.
+- **Passwords gate access, they do not encrypt.** The server can read all
+  content, and an unlock cookie is a bearer credential.
+- **No accounts, still.** A password is per notepad, shared out-of-band; there is
+  no identity, recovery or audit trail.
 
 ## 14. Observability
 

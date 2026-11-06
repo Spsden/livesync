@@ -50,6 +50,55 @@ Examples:
 ?q=7f84f4              → id prefix
 ```
 
+### `POST /api/rooms`
+
+Creates the notepad row explicitly, so a password can exist before the first
+connection. Ids are generated client-side.
+
+```json
+{ "room": "7f84f42f13b5", "pin": "at least 6 characters" }
+```
+
+`pin` is optional; omit it for a link-only notepad. Returns
+`{ "ok": true, "room": "...", "locked": true }`.
+
+| Status | When |
+| --- | --- |
+| `200` | created |
+| `400` | invalid room, or a password shorter than 6 characters |
+| `409` | a notepad with that id already exists |
+
+### `GET /api/rooms/:room/access`
+
+What the client needs before opening a websocket: whether a password is set, and
+whether this browser already passed it.
+
+```json
+{ "room": "7f84f42f13b5", "locked": true, "unlocked": false, "listed": true }
+```
+
+A room with no row (never created explicitly) reports `locked: false`.
+
+### `POST /api/rooms/:room/unlock`
+
+```json
+{ "pin": "the password" }
+```
+
+On success sets an `HttpOnly`, `SameSite=Lax` cookie scoped to that room
+(`ls_room_<room>`, signed with `COOKIE_SECRET`, 7-day default) and returns
+`{ "ok": true, "locked": true }`.
+
+| Status | When |
+| --- | --- |
+| `200` | accepted (or the notepad has no password) |
+| `401` | wrong password |
+| `404` | no row for that room |
+| `429` | too many failures — 5 per 5 minutes per IP and room |
+
+The unlock cookie is a **bearer credential**: anyone who copies it can enter
+without the password until it expires.
+
 ### `POST /api/rooms/:room/files`
 
 Uploads one file. `multipart/form-data`, single field named `file`.
@@ -67,6 +116,7 @@ curl -F "file=@notes.pdf" https://livesync.example.com/api/rooms/abc123/files
 | --- | --- |
 | `200` | stored |
 | `400` | invalid room, missing `file` field, or malformed multipart |
+| `401` | the notepad is locked and this request has no unlock cookie |
 | `413` | exceeds `MAX_FILE_BYTES` |
 | `500` | disk or database write failed (blob is rolled back on row failure) |
 
@@ -84,6 +134,7 @@ Streams the blob.
 | Status | When |
 | --- | --- |
 | `200` | stream |
+| `401` | the notepad is locked and this request has no unlock cookie |
 | `404` | no row, or the row's blob is missing on disk |
 
 ### `DELETE /api/rooms/:room/files/:id`
@@ -93,6 +144,8 @@ Deletes one attachment. Scoped by room: an id from another notepad returns `404`
 ```json
 { "ok": true, "id": "0f8c...-uuid" }
 ```
+
+Requires the unlock cookie when the notepad has a password.
 
 The row is removed before the blob is unlinked (see I6 in the architecture doc).
 The caller is responsible for removing the entry from the shared `files` array;
@@ -114,6 +167,7 @@ the tombstone.
 | --- | --- |
 | `200` | deleted (or already gone) |
 | `400` | invalid room |
+| `401` | the notepad is locked and this request has no unlock cookie |
 | `500` | database failure; state may be partially removed |
 
 ### `GET /`, `GET /n/:room`
@@ -144,6 +198,10 @@ Parsed in `server/config.js`. Blank values fall through to defaults.
 | `DB_PORT` | `PG_PORT`, else `5432` | Postgres port for bare-metal runs |
 | `PG_PORT` | `5433` | Host port Compose publishes Postgres on; also the bare-metal fallback |
 | `MAX_FILE_BYTES` | `26214400` (25 MB) | Per-file ceiling |
+| `COOKIE_SECRET` | random per boot | Signs unlock cookies; unset means every restart logs people out |
+| `COOKIE_MAX_AGE_MS` | `604800000` (7 days) | Unlock cookie lifetime |
+| `PIN_ATTEMPTS` | `5` | Failed unlocks allowed per window |
+| `PIN_WINDOW_MS` | `300000` (5 min) | Rate-limit window |
 | `FLUSH_DELAY_MS` | `750` | Snapshot debounce; also the max server-side loss on SIGKILL |
 | `IDLE_ROOM_MS` | `600000` (10 min) | Evict rooms from memory after this long with no connections |
 | `GC_MIN_AGE_MS` | `3600000` (1 h) | `scripts/gc.mjs` only: skip blobs younger than this |
@@ -196,7 +254,10 @@ CREATE TABLE rooms (
   name       text NOT NULL DEFAULT 'untitled',
   listed     boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
-  listed_at  timestamptz
+  listed_at  timestamptz,
+  pin_hash    text,                       -- scrypt hash, NULL = no password
+  pin_salt    text,
+  pin_version integer NOT NULL DEFAULT 0  -- bump to invalidate cookies
 );
 CREATE INDEX rooms_listed_idx ON rooms (listed, listed_at DESC);
 -- plus a GIN trigram index on name when pg_trgm is available
@@ -227,6 +288,12 @@ revision history.
   sessions.
 - **Health is shallow.** It checks `SELECT 1`, not disk space or blob
   readability.
+- **No password recovery.** Losing the password loses the notepad; even deletion
+  needs it. Operators can remove the row with SQL.
+- **Rate limiting is in-memory.** A restart resets the counters, and it is per
+  IP, so a distributed attempt is not fully covered.
+- **Listed names are public.** The directory shows the name and id; only the
+  content is gated.
 - **Listing is a capability decision, not a privacy one.** Anyone holding a link
   can mark that notepad as listed; the directory publishes the room id to
   everyone. Listing is off by default.
