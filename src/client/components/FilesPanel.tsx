@@ -10,9 +10,17 @@ type Props = {
   pending: PendingUpload[]
   onPick: (files: File[]) => void
   onDelete: (file: FileMeta) => void
+  onClose: () => void
 }
 
-export function FilesPanel({ open, files, pending, onPick, onDelete }: Props) {
+export function FilesPanel({
+  open,
+  files,
+  pending,
+  onPick,
+  onDelete,
+  onClose,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const newestFirst = [...files].reverse()
 
@@ -27,6 +35,14 @@ export function FilesPanel({ open, files, pending, onPick, onDelete }: Props) {
           onClick={() => inputRef.current?.click()}
         >
           Upload
+        </button>
+        <button
+          type="button"
+          className="panel-close"
+          aria-label="Close files"
+          onClick={onClose}
+        >
+          ×
         </button>
         <input
           ref={inputRef}

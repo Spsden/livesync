@@ -87,7 +87,7 @@ export function NotepadSearch({
           ref={inputRef}
           className="search-input"
           value={query}
-          placeholder="Search this notepad — titles and text, typos ok"
+          placeholder="Search this notepad (typos ok)"
           aria-label="Search this notepad"
           spellCheck={false}
           onChange={(event) => setQuery(event.target.value)}

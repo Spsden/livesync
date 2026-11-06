@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BASE_PATH } from '../base'
 import type { PresenceUser } from '../types'
 import { initials } from '../ui'
@@ -42,9 +42,36 @@ export function TopBar({
 }: Props) {
   const visible = users.slice(0, 5)
   const [draft, setDraft] = useState(name)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // Remote renames and reconnects must not fight the local draft.
   useEffect(() => setDraft(name), [name])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
+  const renameNotepad = () => {
+    const next = window.prompt('Notepad name', name)
+    if (next === null) return
+    const clean = next.trim()
+    if (clean && clean !== name) onRename(clean)
+  }
 
   const commit = () => {
     const next = draft.trim()
@@ -176,6 +203,76 @@ export function TopBar({
       >
         Delete
       </button>
+
+      <div className="mobile-menu" ref={menuRef}>
+        <button
+          type="button"
+          className="btn-ghost icon-btn"
+          aria-label="More actions"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <circle cx="3" cy="8" r="1.4" />
+            <circle cx="8" cy="8" r="1.4" />
+            <circle cx="13" cy="8" r="1.4" />
+          </svg>
+        </button>
+
+        {menuOpen && (
+          <div className="mobile-menu-panel" role="menu">
+            <p className="mobile-menu-title">{name}</p>
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => {
+                setMenuOpen(false)
+                renameNotepad()
+              }}
+            >
+              Rename notepad
+            </button>
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => {
+                setMenuOpen(false)
+                onToggleListed()
+              }}
+            >
+              {listed ? 'Remove from directory' : 'List in directory'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                onToggleFiles()
+              }}
+            >
+              Files{filesCount > 0 ? ` (${filesCount})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                onNew()
+              }}
+            >
+              New notepad
+            </button>
+            <button
+              type="button"
+              className="is-danger"
+              onClick={() => {
+                setMenuOpen(false)
+                onDeleteNotepad()
+              }}
+            >
+              Delete notepad
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   )
 }

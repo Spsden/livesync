@@ -1011,47 +1011,124 @@ body {
   opacity: 1;
 }
 
-@media (max-width: 760px) {
-  .brand {
-    display: none;
-  }
+/* ---------------------------------------------------------- mobile menu --- */
 
-  .notepad-name {
-  flex: 0 1 220px;
-  min-width: 80px;
-  padding: 5px 8px;
+.mobile-menu {
+  position: relative;
+  display: none;
+}
+
+.mobile-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 70;
+  min-width: 190px;
+  padding: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.mobile-menu-title {
+  margin: 0 0 4px;
+  padding: 6px 10px 8px;
   overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-menu-panel button {
+  display: block;
+  width: 100%;
+  padding: 10px;
   color: var(--text);
   font-family: inherit;
   font-size: 13px;
-  text-overflow: ellipsis;
-  background: transparent;
-  border: 1px solid transparent;
+  text-align: left;
+  background: none;
+  border: none;
   border-radius: 6px;
-  outline: none;
+  cursor: pointer;
 }
 
-.notepad-name:hover {
-  background: var(--bg-elev);
+.mobile-menu-panel button:hover,
+.mobile-menu-panel button:active {
+  background: var(--bg-elev-2);
 }
 
-.notepad-name:focus {
-  background: var(--bg);
-  border-color: var(--accent);
+.mobile-menu-panel button.is-danger {
+  color: var(--danger);
 }
 
-.notepad-name::placeholder {
-  color: var(--faint);
+.mobile-menu-panel button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.listed-toggle.is-on {
-  color: var(--accent);
-  background: rgba(91, 140, 255, 0.08);
-  border-color: rgba(91, 140, 255, 0.45);
+.files-backdrop,
+.panel-close {
+  display: none;
 }
 
-.room-pill {
-    max-width: 46vw;
+/* Touch devices have no hover: hover-only affordances would be invisible. */
+@media (hover: none) {
+  .tab-close,
+  .file-delete {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 860px) {
+  /* Six controls do not fit a phone, so secondary actions move into a menu. */
+  .brand,
+  .notepad-name,
+  .listed-toggle,
+  .topbar > .btn-ghost:not(.icon-btn) {
+    display: none;
+  }
+
+  .mobile-menu {
+    display: block;
+  }
+
+  .room-pill {
+    max-width: 42vw;
+  }
+
+  .presence .avatar:nth-child(n + 3) {
+    display: none;
+  }
+
+  .search-overlay {
+    padding: 6vh 12px 12px;
+  }
+
+  .search-input,
+  .home-search {
+    font-size: 16px; /* stops iOS zooming the viewport on focus */
+  }
+
+  .home-section-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .home-search {
+    width: 100%;
+  }
+
+  .files-backdrop {
+    position: fixed;
+    inset: var(--topbar-h) 0 0 0;
+    z-index: 29;
+    display: block;
+    background: rgba(0, 0, 0, 0.4);
   }
 
   .files-panel.is-open {
@@ -1062,5 +1139,29 @@ body {
     z-index: 30;
     width: min(320px, 86vw);
     box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
+  }
+
+  .panel-close {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .panel-close:hover {
+    color: var(--text);
+    background: var(--bg-elev-2);
+  }
+
+  .home {
+    padding: 40px 18px 64px;
   }
 }

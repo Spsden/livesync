@@ -264,6 +264,11 @@ export function Notepad({ room, doc, provider }: Props) {
     notify(next ? 'Listed in the directory' : 'Removed from the directory')
   }
 
+  const closeFiles = () => {
+    setFilesOpen(false)
+    localStorage.setItem(FILES_OPEN_KEY, 'false')
+  }
+
   const toggleFiles = () => {
     setFilesOpen((open) => {
       localStorage.setItem(FILES_OPEN_KEY, String(!open))
@@ -508,12 +513,21 @@ export function Notepad({ room, doc, provider }: Props) {
           )}
         </div>
 
+        {filesOpen && (
+          <div
+            className="files-backdrop"
+            aria-hidden="true"
+            onClick={closeFiles}
+          />
+        )}
+
         <FilesPanel
           open={filesOpen}
           files={fileList}
           pending={pending}
           onPick={upload}
           onDelete={(file) => void removeFile(file)}
+          onClose={closeFiles}
         />
       </div>
 

@@ -112,7 +112,7 @@ export function HomePage() {
               className="home-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name or id — typos ok"
+              placeholder="Search by name or id"
               aria-label="Search public notepads"
               spellCheck={false}
             />

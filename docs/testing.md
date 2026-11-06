@@ -97,7 +97,10 @@ release:
 12. Ctrl/Cmd+F opens the notepad search; a misspelled query finds text in a
     different tab; the hit shows a highlighted snippet; opening it switches tabs;
     Escape closes the palette.
-13. No console errors or unhandled page errors in either context.
+13. At 390px wide there is no horizontal overflow: the top bar collapses to
+    share/search/menu, the menu reaches rename, listing, files, new and delete,
+    the files drawer closes, and the search placeholder is not clipped.
+14. No console errors or unhandled page errors in either context.
 
 Recipe if you want to rebuild it: `npm i -D playwright-core`, point `CHROME` at a
 Chromium/Chrome binary (or `npx playwright install chromium` once), drive two
