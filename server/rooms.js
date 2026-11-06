@@ -13,6 +13,8 @@ import { sendSyncUpdate, sendAwareness } from './sync.js'
 /** Close code for "this notepad no longer exists". y-websocket treats 4400-4499
  *  as permanent, so clients stop reconnecting instead of recreating the room. */
 export const CLOSE_ROOM_DELETED = 4404
+/** Same permanent range: clients stop retrying and ask for the password. */
+export const CLOSE_ROOM_LOCKED = 4403
 
 /** @type {Map<string, any>} */
 const rooms = new Map()

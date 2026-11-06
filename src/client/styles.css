@@ -870,6 +870,134 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* --------------------------------------------------------------- unlock --- */
+
+.unlock {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 24px;
+}
+
+.unlock-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(380px, 100%);
+}
+
+.unlock-brand {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.unlock-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.unlock-body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.unlock-body code {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.unlock-input {
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.unlock-input:focus {
+  border-color: var(--accent);
+}
+
+.unlock-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.unlock-home {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.unlock-home:hover {
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------- create --- */
+
+.create-panel {
+  padding: 20px;
+}
+
+.create-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.create-body {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.create-field input {
+  padding: 9px 11px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.create-field input:focus {
+  border-color: var(--accent);
+}
+
+.create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.room-lock {
+  flex: none;
+  color: var(--faint);
+}
+
 /* --------------------------------------------------------------- search --- */
 
 .search-overlay {

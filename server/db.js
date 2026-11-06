@@ -58,6 +58,17 @@ export async function migrate() {
     'CREATE INDEX IF NOT EXISTS rooms_listed_idx ON rooms (listed, listed_at DESC)',
   )
 
+  // Passwords are optional; a notepad can only be listed if it has one.
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS pin_hash text')
+  await pool.query('ALTER TABLE rooms ADD COLUMN IF NOT EXISTS pin_salt text')
+  await pool.query(
+    'ALTER TABLE rooms ADD COLUMN IF NOT EXISTS pin_version integer NOT NULL DEFAULT 0',
+  )
+  // Listing without a password was possible before the rule existed.
+  await pool.query(
+    'UPDATE rooms SET listed = false, listed_at = NULL WHERE listed = true AND pin_hash IS NULL',
+  )
+
   // Substring search is a sequential scan without this. pg_trgm is a trusted
   // extension on modern Postgres, but a managed database may forbid CREATE
   // EXTENSION; degrade to plain substring search rather than failing to boot.
@@ -134,10 +145,32 @@ export async function saveRoomMeta(room, name, listed) {
      VALUES ($1, $2, $3, CASE WHEN $3 THEN now() ELSE NULL END)
      ON CONFLICT (room) DO UPDATE
        SET name = EXCLUDED.name,
-           listed = EXCLUDED.listed,
-           listed_at = CASE WHEN EXCLUDED.listed THEN now() ELSE NULL END`,
+           -- a notepad without a password must never be published
+           listed = (EXCLUDED.listed AND rooms.pin_hash IS NOT NULL),
+           listed_at = CASE
+             WHEN EXCLUDED.listed AND rooms.pin_hash IS NOT NULL THEN now()
+             ELSE NULL
+           END`,
     [room, name, listed],
   )
+}
+
+export async function createRoomRow(room, pinHash, pinSalt) {
+  const { rowCount } = await pool.query(
+    `INSERT INTO rooms (room, name, listed, pin_hash, pin_salt)
+     VALUES ($1, 'untitled', false, $2, $3)
+     ON CONFLICT (room) DO NOTHING`,
+    [room, pinHash, pinSalt],
+  )
+  return rowCount > 0
+}
+
+export async function getRoomAccess(room) {
+  const { rows } = await pool.query(
+    'SELECT pin_hash, pin_salt, pin_version, listed FROM rooms WHERE room = $1',
+    [room],
+  )
+  return rows[0] ?? null
 }
 
 /**
@@ -150,11 +183,12 @@ export async function saveRoomMeta(room, name, listed) {
  */
 const FUZZY_SQL = `
   WITH params AS (SELECT lower(btrim($1)) AS q)
-  SELECT r.room, r.name, s.updated_at
+  SELECT r.room, r.name, s.updated_at, (r.pin_hash IS NOT NULL) AS locked
     FROM rooms r
     JOIN ydoc_state s ON s.room = r.room
     CROSS JOIN params p
    WHERE r.listed = true
+     AND r.pin_hash IS NOT NULL
      AND (
        p.q = ''
        OR r.room = p.q
@@ -181,11 +215,12 @@ const FUZZY_SQL = `
 
 const BASIC_SQL = `
   WITH params AS (SELECT lower(btrim($1)) AS q)
-  SELECT r.room, r.name, s.updated_at
+  SELECT r.room, r.name, s.updated_at, (r.pin_hash IS NOT NULL) AS locked
     FROM rooms r
     JOIN ydoc_state s ON s.room = r.room
     CROSS JOIN params p
    WHERE r.listed = true
+     AND r.pin_hash IS NOT NULL
      AND (
        p.q = ''
        OR r.room = p.q

@@ -1,13 +1,43 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { withBase } from '../base'
+import { CreateNotepad } from '../components/CreateNotepad'
 import { readRecents, type RecentRoom } from '../recents'
-import { timeAgo, uid } from '../ui'
+import { timeAgo } from '../ui'
 
 type DirectoryRoom = {
   room: string
   name: string
   updatedAt: string
+  locked: boolean
+}
+
+function LockIcon() {
+  return (
+    <svg
+      className="room-lock"
+      width="11"
+      height="11"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x="3.5"
+        y="7"
+        width="9"
+        height="6.5"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M5.8 7V5.2a2.2 2.2 0 0 1 4.4 0V7"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+    </svg>
+  )
 }
 
 export function HomePage() {
@@ -15,6 +45,7 @@ export function HomePage() {
   const [query, setQuery] = useState('')
   const [rooms, setRooms] = useState<DirectoryRoom[]>([])
   const [status, setStatus] = useState<'loading' | 'idle' | 'error'>('loading')
+  const [creating, setCreating] = useState(false)
   const [recents] = useState<RecentRoom[]>(() => readRecents())
 
   useEffect(() => {
@@ -51,10 +82,6 @@ export function HomePage() {
     }
   }, [query])
 
-  const create = () => {
-    void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
-  }
-
   return (
     <main className="home">
       <div className="home-inner">
@@ -66,7 +93,11 @@ export function HomePage() {
           files in. Everyone holding the link sees the same thing.
         </p>
 
-        <button type="button" className="btn-primary home-cta" onClick={create}>
+        <button
+          type="button"
+          className="btn-primary home-cta"
+          onClick={() => setCreating(true)}
+        >
           Create a notepad
         </button>
 
@@ -128,7 +159,9 @@ export function HomePage() {
                     className="room-row"
                     to="/n/$roomId"
                     params={{ roomId: entry.room }}
+                    title="Password required"
                   >
+                    {entry.locked && <LockIcon />}
                     <span className="room-name">{entry.name}</span>
                     <span className="room-id">/n/{entry.room}</span>
                     <span className="room-when">{timeAgo(entry.updatedAt)}</span>
@@ -142,16 +175,24 @@ export function HomePage() {
             <p className="home-note">
               {query.trim()
                 ? 'No listed notepad matches that.'
-                : 'Nothing is listed yet. Open a notepad and set it to “Listed” to publish it here.'}
+                : 'Nothing is listed yet. Notepads appear here only if they were created with a password and set to “Listed”.'}
             </p>
           )}
         </section>
 
         <p className="home-foot">
-          Already have a link? Just open it. Listings only include notepads their
-          participants chose to publish.
+          Already have a link? Just open it. Public notepads always require their
+          password.
         </p>
       </div>
+
+      <CreateNotepad
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(room) => {
+          void navigate({ to: '/n/$roomId', params: { roomId: room } })
+        }}
+      />
     </main>
   )
 }

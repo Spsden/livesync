@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+
 const env = process.env
 
 /**
@@ -40,6 +42,12 @@ export const config = {
   flushDelayMs: Number(env.FLUSH_DELAY_MS ?? 750),
   // Drop idle documents from memory once nobody has been connected for this long.
   idleRoomMs: Number(env.IDLE_ROOM_MS ?? 10 * 60 * 1000),
+  // Signs per-room unlock cookies. Unset means a random secret per boot, which
+  // invalidates every unlock on restart — fine locally, not in production.
+  cookieSecret: env.COOKIE_SECRET ?? randomBytes(32).toString('hex'),
+  cookieMaxAgeMs: Number(env.COOKIE_MAX_AGE_MS ?? 7 * 24 * 60 * 60 * 1000),
+  pinAttempts: Number(env.PIN_ATTEMPTS ?? 5),
+  pinWindowMs: Number(env.PIN_WINDOW_MS ?? 5 * 60 * 1000),
 }
 
 // Room names are the only secret in the system, so they are URL-safe and

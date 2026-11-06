@@ -27,9 +27,11 @@ type Props = {
   room: string
   doc: Y.Doc
   provider: WebsocketProvider
+  /** True when the notepad has a password (and this client passed it). */
+  locked: boolean
 }
 
-export function Notepad({ room, doc, provider }: Props) {
+export function Notepad({ room, doc, provider, locked }: Props) {
   const navigate = useNavigate()
 
   const tabs = useMemo(() => doc.getArray<TabMeta>('tabs'), [doc])
@@ -86,6 +88,13 @@ export function Notepad({ room, doc, provider }: Props) {
     return () => provider.off('sync', onSync)
   }, [provider])
 
+  // Legacy notepads could be listed before passwords were required. The server
+  // already refuses to publish them; clear the stale flag in the document too.
+  useEffect(() => {
+    if (!ready || locked || !meta.listed) return
+    setNotepadListed(doc, false)
+  }, [ready, locked, meta.listed, doc])
+
   useEffect(() => {
     rememberRoom(room, meta.name)
   }, [room, meta.name])
@@ -113,6 +122,9 @@ export function Notepad({ room, doc, provider }: Props) {
     // stops reconnecting for 4400-4499, so we just need to say so.
     const onClosed = (event: { code: number }) => {
       if (event.code === 4404) setGone(true)
+      // The unlock cookie expired or was invalidated: re-run the access check
+      // so the password screen replaces the dead editor.
+      else if (event.code === 4403) window.location.reload()
     }
     provider.on('closed', onClosed)
     return () => provider.off('closed', onClosed)
@@ -249,7 +261,7 @@ export function Notepad({ room, doc, provider }: Props) {
   }
 
   const startNew = () => {
-    void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
+    void navigate({ to: '/' })
   }
 
   const openSearchHit = (hit: SearchHit) => {
@@ -259,6 +271,10 @@ export function Notepad({ room, doc, provider }: Props) {
   }
 
   const toggleListed = () => {
+    if (!locked) {
+      notify('Create a notepad with a password to publish it')
+      return
+    }
     const next = !meta.listed
     setNotepadListed(doc, next)
     notify(next ? 'Listed in the directory' : 'Removed from the directory')
@@ -438,6 +454,7 @@ export function Notepad({ room, doc, provider }: Props) {
         onToggleListed={toggleListed}
         onSearch={() => setSearchOpen(true)}
         ready={ready}
+        canList={locked}
       />
 
       <TabBar

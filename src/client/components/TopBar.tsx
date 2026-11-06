@@ -20,6 +20,8 @@ type Props = {
   onToggleListed: () => void
   onSearch: () => void
   ready: boolean
+  /** False when the notepad has no password, so it cannot be published. */
+  canList: boolean
 }
 
 export function TopBar({
@@ -39,6 +41,7 @@ export function TopBar({
   onToggleListed,
   onSearch,
   ready,
+  canList,
 }: Props) {
   const visible = users.slice(0, 5)
   const [draft, setDraft] = useState(name)
@@ -128,11 +131,13 @@ export function TopBar({
         type="button"
         className={`btn-ghost listed-toggle${listed ? ' is-on' : ''}`}
         aria-pressed={listed}
-        disabled={!ready}
+        disabled={!ready || !canList}
         title={
-          listed
-            ? 'Listed in the public directory — click to unlist'
-            : 'Add this notepad to the public directory'
+          !canList
+            ? 'Create a notepad with a password to publish it'
+            : listed
+              ? 'Listed in the public directory — click to unlist'
+              : 'Add this notepad to the public directory'
         }
         onClick={onToggleListed}
       >
@@ -234,7 +239,7 @@ export function TopBar({
             </button>
             <button
               type="button"
-              disabled={!ready}
+              disabled={!ready || !canList}
               onClick={() => {
                 setMenuOpen(false)
                 onToggleListed()

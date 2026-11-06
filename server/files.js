@@ -6,6 +6,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { config, isValidRoom } from './config.js'
 import { insertFile, getFile, deleteFileRecord } from './db.js'
+import { requireRoomAccess, roomAccess } from './pin.js'
 
 export const filesDir = path.join(config.dataDir, 'files')
 
@@ -36,7 +37,7 @@ const upload = multer({
 
 export const filesRouter = Router()
 
-filesRouter.post('/rooms/:room/files', (req, res, next) => {
+filesRouter.post('/rooms/:room/files', requireRoomAccess, (req, res, next) => {
   const { room } = req.params
   if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
 
@@ -81,7 +82,7 @@ filesRouter.post('/rooms/:room/files', (req, res, next) => {
   res.json({ id, name, mime, size: file.size, url: `/api/files/${id}` })
 })
 
-filesRouter.delete('/rooms/:room/files/:id', async (req, res) => {
+filesRouter.delete('/rooms/:room/files/:id', requireRoomAccess, async (req, res) => {
   const { room, id } = req.params
   if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
 
@@ -97,6 +98,12 @@ filesRouter.delete('/rooms/:room/files/:id', async (req, res) => {
 filesRouter.get('/files/:id', async (req, res) => {
   const row = await getFile(req.params.id)
   if (!row) return res.status(404).json({ error: 'not found' })
+
+  // Downloads carry the same lock as the editor: a blob id must not bypass it.
+  const access = await roomAccess(row.room, req)
+  if (access.locked && !access.unlocked) {
+    return res.status(401).json({ error: 'notepad is locked' })
+  }
 
   const diskPath = path.join(filesDir, row.id)
   try {

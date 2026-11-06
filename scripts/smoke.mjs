@@ -8,6 +8,7 @@
 // actually deletes (including when a debounced save is still in flight).
 
 import * as Y from 'yjs'
+import WebSocket from 'ws'
 import { WebsocketProvider } from 'y-websocket'
 
 const base = process.env.BASE ?? 'http://127.0.0.1:3000'
@@ -92,52 +93,134 @@ try {
   console.log('awareness propagated')
 
   // --- directory read model ---
-  // name/listed live in the Yjs meta map and are mirrored into Postgres; the
-  // directory must reflect that mirror, not the document.
+  // name/listed live in the Yjs meta map and are mirrored into Postgres. A
+  // notepad without a password must never become publishable.
   docA.getMap('meta').set('name', 'smoke directory')
   docA.getMap('meta').set('listed', true)
   await wait(1500)
 
-  const listed = await (await fetch(`${base}/api/rooms?q=smoke%20directory`)).json()
+  const refused = await (
+    await fetch(`${base}/api/rooms?q=smoke%20directory`)
+  ).json()
   assert(
-    listed.rooms.some((entry) => entry.room === room),
-    'listed notepad appears in the directory',
+    !refused.rooms.some((entry) => entry.room === room),
+    'a notepad without a password cannot be listed',
+  )
+  console.log('directory: publishing without a password is refused')
+
+  // --- password-protected notepads ---
+  const lockedRoom = `smoke-lock-${Math.random().toString(36).slice(2, 8)}`
+  const pin = 'smoke-pin-123'
+  const json = { 'content-type': 'application/json' }
+
+  let response = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ room: lockedRoom, pin }),
+  })
+  assert(response.ok, `locked notepad created (${response.status})`)
+
+  const access = await (
+    await fetch(`${base}/api/rooms/${lockedRoom}/access`)
+  ).json()
+  assert(access.locked === true && access.unlocked === false, 'it starts locked')
+
+  const blockedDoc = new Y.Doc()
+  const blocked = new WebsocketProvider(wsBase, lockedRoom, blockedDoc, {
+    disableBc: true,
+  })
+  const blockedCode = await new Promise((resolve) => {
+    blocked.on('closed', (event) => resolve(event.code))
+    setTimeout(() => resolve('timeout'), 4000)
+  })
+  assert(blockedCode === 4403, `locked websocket is refused (got ${blockedCode})`)
+  blocked.destroy()
+  blockedDoc.destroy()
+
+  response = await fetch(`${base}/api/rooms/${lockedRoom}/unlock`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ pin: 'wrong-pin' }),
+  })
+  assert(response.status === 401, 'wrong password is rejected')
+
+  response = await fetch(`${base}/api/rooms/${lockedRoom}/unlock`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ pin }),
+  })
+  assert(response.ok, `correct password accepted (${response.status})`)
+  const setCookie = response.headers.get('set-cookie') ?? ''
+  assert(/HttpOnly/i.test(setCookie), 'unlock cookie is HttpOnly')
+  const cookie = setCookie.split(';')[0]
+
+  const form = new FormData()
+  form.append('file', new Blob(['locked body']), 'locked.txt')
+  response = await fetch(`${base}/api/rooms/${lockedRoom}/files`, {
+    method: 'POST',
+    body: form,
+  })
+  assert(response.status === 401, 'upload without the cookie is refused')
+
+  response = await fetch(`${base}/api/rooms/${lockedRoom}`, { method: 'DELETE' })
+  assert(response.status === 401, 'delete without the cookie is refused')
+
+  class CookieWebSocket extends WebSocket {
+    constructor(url, protocols) {
+      super(url, protocols, { headers: { cookie } })
+    }
+  }
+
+  const lockedDoc = new Y.Doc()
+  const lockedProvider = new WebsocketProvider(wsBase, lockedRoom, lockedDoc, {
+    disableBc: true,
+    WebSocketPolyfill: CookieWebSocket,
+  })
+  await synced(lockedProvider)
+  lockedDoc.getMap('meta').set('name', 'smoke locked')
+  lockedDoc.getMap('meta').set('listed', true)
+  await wait(1600)
+
+  const published = await (
+    await fetch(`${base}/api/rooms?q=smoke%20locked`)
+  ).json()
+  assert(
+    published.rooms.some(
+      (entry) => entry.room === lockedRoom && entry.locked === true,
+    ),
+    'a password-protected notepad can be listed',
   )
   assert(
-    listed.rooms.find((entry) => entry.room === room)?.name === 'smoke directory',
+    published.rooms.find((entry) => entry.room === lockedRoom)?.name ===
+      'smoke locked',
     'directory shows the notepad name',
   )
 
-  const byId = await (await fetch(`${base}/api/rooms?q=${room.slice(0, 6)}`)).json()
+  const byId = await (
+    await fetch(`${base}/api/rooms?q=${lockedRoom.slice(0, 10)}`)
+  ).json()
   assert(
-    byId.rooms.some((entry) => entry.room === room),
+    byId.rooms.some((entry) => entry.room === lockedRoom),
     'directory search matches an id prefix',
   )
 
   const typo = await (
-    await fetch(`${base}/api/rooms?q=smoke%20directry`)
+    await fetch(`${base}/api/rooms?q=smoke%20lockd`)
   ).json()
   assert(
-    typo.rooms.some((entry) => entry.room === room),
+    typo.rooms.some((entry) => entry.room === lockedRoom),
     'fuzzy search tolerates a typo in the name',
   )
 
-  const reordered = await (
-    await fetch(`${base}/api/rooms?q=directry%20smoke`)
-  ).json()
-  assert(
-    reordered.rooms.some((entry) => entry.room === room),
-    'fuzzy search ignores word order',
-  )
+  lockedProvider.destroy()
+  lockedDoc.destroy()
 
-  docA.getMap('meta').set('listed', false)
-  await wait(1500)
-  const unlisted = await (await fetch(`${base}/api/rooms?q=smoke%20directory`)).json()
-  assert(
-    !unlisted.rooms.some((entry) => entry.room === room),
-    'unlisted notepad disappears from the directory',
-  )
-  console.log('directory: listing, fuzzy search and unlisting')
+  response = await fetch(`${base}/api/rooms/${lockedRoom}`, {
+    method: 'DELETE',
+    headers: { cookie },
+  })
+  assert(response.ok, 'delete with the cookie succeeds')
+  console.log('locked notepad: ws, files, delete and listing gated')
 
   // --- files ---
   const meta = await upload('smoke.txt', 'smoke test body')

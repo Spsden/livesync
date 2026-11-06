@@ -5,7 +5,28 @@ import express from 'express'
 import { WebSocketServer } from 'ws'
 
 import { config, isValidRoom } from './config.js'
-import { migrate, pool, isRoomDeleted, listRooms } from './db.js'
+import {
+  migrate,
+  pool,
+  isRoomDeleted,
+  listRooms,
+  createRoomRow,
+  getRoomAccess,
+} from './db.js'
+import {
+  MIN_PIN_LENGTH,
+  clearPinFailures,
+  cookieName,
+  hashPin,
+  isValidPin,
+  issueCookie,
+  notePinFailure,
+  pinAttemptKey,
+  pinRateLimited,
+  requireRoomAccess,
+  roomAccess,
+  verifyPin,
+} from './pin.js'
 import { filesRouter, initFiles, removeBlobs } from './files.js'
 import { collectOrphanBlobs } from './gc.js'
 import {
@@ -16,6 +37,7 @@ import {
   sweepIdleRooms,
   roomCount,
   CLOSE_ROOM_DELETED,
+  CLOSE_ROOM_LOCKED,
 } from './rooms.js'
 import {
   readMessage,
@@ -30,6 +52,10 @@ const indexHtml = path.join(clientDir, 'index.html')
 
 const app = express()
 app.disable('x-powered-by')
+// cloudflared sets X-Forwarded-For/Proto; without this req.ip is the tunnel and
+// the secure-cookie decision is wrong.
+app.set('trust proxy', 1)
+app.use(express.json({ limit: '16kb' }))
 app.use((req, res, next) => {
   // This is shareable-by-URL by design; do not leak rooms into search engines
   // or Referer headers on outbound links.
@@ -68,6 +94,7 @@ router.get('/api/rooms', async (req, res) => {
         room: row.room,
         name: row.name,
         updatedAt: row.updated_at,
+        locked: row.locked === true,
       })),
     })
   } catch (err) {
@@ -76,12 +103,98 @@ router.get('/api/rooms', async (req, res) => {
   }
 })
 
+// Create a notepad explicitly so a password can be set before it is ever
+// opened. Ids are generated client-side; a collision returns 409.
+router.post('/api/rooms', async (req, res) => {
+  const body = req.body ?? {}
+  const room = typeof body.room === 'string' ? body.room : ''
+  const pin = typeof body.pin === 'string' && body.pin !== '' ? body.pin : null
+
+  if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
+  if (pin !== null && !isValidPin(pin)) {
+    return res.status(400).json({
+      error: `password must be at least ${MIN_PIN_LENGTH} characters`,
+    })
+  }
+
+  try {
+    const hashed = pin ? await hashPin(pin) : null
+    const created = await createRoomRow(
+      room,
+      hashed?.hash ?? null,
+      hashed?.salt ?? null,
+    )
+    if (!created) return res.status(409).json({ error: 'notepad already exists' })
+    res.json({ ok: true, room, locked: Boolean(hashed) })
+  } catch (err) {
+    console.error('[rooms] create failed:', err)
+    res.status(500).json({ error: 'could not create notepad' })
+  }
+})
+
+// Tells the client whether to show the unlock screen before it ever connects.
+router.get('/api/rooms/:room/access', async (req, res) => {
+  const { room } = req.params
+  if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
+
+  try {
+    const access = await roomAccess(room, req)
+    res.json({
+      room,
+      locked: access.locked,
+      unlocked: access.unlocked,
+      listed: access.listed,
+    })
+  } catch (err) {
+    console.error(`[rooms] access check ${room} failed:`, err)
+    res.status(500).json({ error: 'could not check access' })
+  }
+})
+
+router.post('/api/rooms/:room/unlock', async (req, res) => {
+  const { room } = req.params
+  if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
+
+  const attemptKey = pinAttemptKey(req, room)
+  if (pinRateLimited(attemptKey)) {
+    return res
+      .status(429)
+      .json({ error: 'too many attempts — try again in a few minutes' })
+  }
+
+  try {
+    const row = await getRoomAccess(room)
+    if (!row) return res.status(404).json({ error: 'no such notepad' })
+    if (!row.pin_hash) return res.json({ ok: true, locked: false })
+
+    const pin = typeof req.body?.pin === 'string' ? req.body.pin : ''
+    const ok = await verifyPin(pin, row.pin_salt, row.pin_hash)
+    if (!ok) {
+      notePinFailure(attemptKey)
+      return res.status(401).json({ error: 'wrong password' })
+    }
+
+    clearPinFailures(attemptKey)
+    res.cookie(cookieName(room), issueCookie(room, row.pin_version), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: req.secure,
+      path: '/',
+      maxAge: config.cookieMaxAgeMs,
+    })
+    res.json({ ok: true, locked: true })
+  } catch (err) {
+    console.error(`[rooms] unlock ${room} failed:`, err)
+    res.status(500).json({ error: 'could not unlock notepad' })
+  }
+})
+
 router.use('/api', filesRouter)
 
 // Deleting a notepad is destructive and unauthenticated, exactly like editing
 // it: possession of the URL is the whole permission model. The UI asks for a
 // typed confirmation; the API deliberately does not pretend to be stronger.
-router.delete('/api/rooms/:room', async (req, res) => {
+router.delete('/api/rooms/:room', requireRoomAccess, async (req, res) => {
   const { room } = req.params
   if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
 
@@ -148,7 +261,7 @@ server.on('upgrade', (req, socket, head) => {
   })
 })
 
-wss.on('connection', async (ws, _req, roomName) => {
+wss.on('connection', async (ws, req, roomName) => {
   const queued = []
   /** @type {any} */
   let room = null
@@ -188,6 +301,15 @@ wss.on('connection', async (ws, _req, roomName) => {
       ws.close(CLOSE_ROOM_DELETED, 'notepad deleted')
       return
     }
+
+    // A password is checked before the document is loaded, so a refused
+    // connection never sees content.
+    const access = await roomAccess(roomName, req)
+    if (access.locked && !access.unlocked) {
+      ws.close(CLOSE_ROOM_LOCKED, 'notepad is locked')
+      return
+    }
+
     room = await getRoom(roomName)
   } catch (err) {
     console.error(`[ws] could not load room ${roomName}:`, err)
