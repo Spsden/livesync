@@ -252,7 +252,9 @@ also had no name at all, only tabs.
 the Yjs document. The server mirrors them into a small `rooms` table on a 500 ms
 debounce and serves `GET /api/rooms?q=` over that table, joined to
 `ydoc_state.updated_at` for recency. `listed` defaults to false. Search matches
-name substrings and id prefixes. The directory query never reads
+name substrings, id prefixes and fuzzy matches: `%` as a GIN-index pre-filter,
+then `similarity()` ranking, with a per-token `word_similarity()` branch so a
+typo or reordered words still find the notepad. The directory query never reads
 `ydoc_state.state`. A `pg_trgm` GIN index is created when the server is allowed
 to, and skipped with a warning when it is not.
 

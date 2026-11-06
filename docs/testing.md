@@ -51,8 +51,9 @@ care). It exits non-zero on the first failed assertion.
 The smoke test also covers the directory read model end to end: it renames the
 notepad through the `meta` map, sets `listed`, and asserts the notepad appears
 via `GET /api/rooms` by name **and** by id prefix, then that unlisting removes
-it. That is the only test covering the Yjs→Postgres mirror; it fails if the meta
-observer or the read-model write breaks.
+it, including a misspelled query and a reordered one. That is the only test
+covering the Yjs→Postgres mirror and the fuzzy ranking; it fails if the meta
+observer, the read-model write, or the trigram query breaks.
 
 ### Two details that will silently weaken the test if removed
 

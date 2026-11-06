@@ -32,12 +32,23 @@ The public directory: only notepads whose participants marked them **listed**.
 
 | Param | Meaning |
 | --- | --- |
-| `q` | Optional. Max 64 chars. Matches the name as a substring, or the room id as a prefix |
+| `q` | Optional. Max 64 chars. Fuzzy: room id (exact or prefix), name substring, trigram similarity, or per-token word similarity. Every token must match |
 | `limit` | 1–50, default 20 |
 
-Ordered by last activity. The query joins `rooms` to `ydoc_state.updated_at` and
-**never selects `ydoc_state.state`** — a directory page must not pull Yjs
-snapshots into memory.
+Ranked by: exact id, id prefix, exact name, name prefix, trigram similarity, then
+last activity. `pg_trgm` supplies the `%` pre-filter and the ranking; without it
+the query degrades to substring matching.
+
+The query joins `rooms` to `ydoc_state.updated_at` and **never selects
+`ydoc_state.state`** — a directory page must not pull Yjs snapshots into memory.
+
+Examples:
+
+```
+?q=quaterly%20plan     → typo still finds "Quarterly plans 2026"
+?q=directry%20smoke    → word order and spelling do not matter
+?q=7f84f4              → id prefix
+```
 
 ### `POST /api/rooms/:room/files`
 
