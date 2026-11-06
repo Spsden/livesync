@@ -96,7 +96,7 @@ database (see invariant I7).
 | `server/files.js` | Upload/download/delete, safe blob naming | Know about rooms' text |
 | `server/gc.js` | Reclaim blobs with no row | Delete rows |
 | `server/config.js` | Env parsing, validation helpers | — |
-| `src/client/*` | React shell, routing, editor, presence, file UI | Hold authoritative state |
+| `src/client/*` | React shell, routing, editor, presence, file UI, notepad search | Hold authoritative state |
 
 The client is not an authority. It renders a replica and writes intents to it;
 the CRDT merge decides the outcome.
@@ -276,6 +276,24 @@ false and nothing is discoverable until a participant chooses it.
 Tombstone checked before load → connection closed 4404 → no room is created.
 This is what stops a stale tab, a same-browser BroadcastChannel peer, or a
 client that was briefly offline from pushing a cached copy back.
+
+### 8.8 In-notepad search
+
+Search is entirely local. `Cmd/Ctrl+F` opens a palette that walks the tab list,
+reads each `Y.Text` from the local replica, and scores:
+
+1. the whole query as a substring (highest);
+2. every token as an exact substring;
+3. every token as a word prefix;
+4. every token within a small edit distance of a word (1–2, by token length).
+
+Every token must match, in any order. One result per tab, ranked, each with a
+snippet whose offsets survive newline replacement. Opening a result switches
+tabs and selects the match in CodeMirror.
+
+No request leaves the browser, so two participants in the same notepad search
+independently and it works offline. The cost is O(content) per debounced query;
+a multi-megabyte notepad would want a worker or an incremental index.
 
 ## 9. Persistence and durability
 

@@ -48,6 +48,10 @@ care). It exits non-zero on the first failed assertion.
 9. **Tombstoned reconnect is refused with `4404`** — the client must not be able
    to recreate a deleted notepad by reconnecting (ADR-004, cause 2).
 
+In-notepad search is **not** covered by the smoke test — it never talks to the
+server, so only the browser checklist exercises it. Keep that in mind when
+changing `src/client/search.ts`: the protocol tests will not notice.
+
 The smoke test also covers the directory read model end to end: it renames the
 notepad through the `meta` map, sets `listed`, and asserts the notepad appears
 via `GET /api/rooms` by name **and** by id prefix, then that unlisting removes
@@ -90,7 +94,10 @@ release:
 11. Rename the notepad in the top bar; toggle it to `Listed`; the home page lists
     it under Public notepads; search by name and by id prefix finds it; toggling
     back to `Unlisted` removes it from the directory while it stays in Recent.
-12. No console errors or unhandled page errors in either context.
+12. Ctrl/Cmd+F opens the notepad search; a misspelled query finds text in a
+    different tab; the hit shows a highlighted snippet; opening it switches tabs;
+    Escape closes the palette.
+13. No console errors or unhandled page errors in either context.
 
 Recipe if you want to rebuild it: `npm i -D playwright-core`, point `CHROME` at a
 Chromium/Chrome binary (or `npx playwright install chromium` once), drive two

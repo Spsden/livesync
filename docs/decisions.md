@@ -298,3 +298,28 @@ CPU-bound path an anonymous caller can reach.
   who already has the notepad open can copy it.
 - Brute force resistance comes from length plus rate limiting, not from the PIN
   alone: 4 digits is ~17 minutes of guessing at 10 requests/second.
+
+---
+
+## ADR-013: Search runs on the client, not the server
+
+**Status:** accepted
+
+**Context.** People wanted fuzzy search across the notepad they are currently in
+— tab titles and content. The server already holds every document and could
+extract text into a searchable column, but that would index everything people
+write and couple a UI feature to persistence.
+
+**Decision.** Search is a pure client-side function over the local Yjs replica:
+phrase match, token substring, word prefix, and bounded edit distance. No
+endpoint, no schema, no index.
+
+**Consequences.**
+
+- Private and offline; no new server surface, and two participants search
+  independently over their own replica.
+- Debounced and bounded, but O(content) per query. A very large notepad would
+  need a web worker or a pre-tokenised index.
+- No cross-notepad search. That is a different feature, and it collides with the
+  capability model unless it is opt-in (the directory) or operator-gated.
+- Tab titles and bodies are searched; attachment filenames are not (yet).
