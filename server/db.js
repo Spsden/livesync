@@ -6,6 +6,9 @@ export const pool = new pg.Pool({
   max: 10,
 })
 
+/** Flipped on when pg_trgm is available, so listRooms can pick a query shape. */
+let trigram = false
+
 export async function migrate() {
   // One row per room holding the whole merged Yjs state. Yjs updates are
   // compact binary diffs, so a notepad with megabytes of text is still a few
@@ -57,14 +60,19 @@ export async function migrate() {
 
   // Substring search is a sequential scan without this. pg_trgm is a trusted
   // extension on modern Postgres, but a managed database may forbid CREATE
-  // EXTENSION; degrade to ILIKE-without-index rather than failing to boot.
+  // EXTENSION; degrade to plain substring search rather than failing to boot.
   try {
     await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm')
-    await pool.query(
-      'CREATE INDEX IF NOT EXISTS rooms_name_trgm ON rooms USING gin (name gin_trgm_ops)',
-    )
+    trigram = true
+    try {
+      await pool.query(
+        'CREATE INDEX IF NOT EXISTS rooms_name_trgm ON rooms USING gin (name gin_trgm_ops)',
+      )
+    } catch (err) {
+      console.warn('[db] trigram index unavailable; fuzzy search will scan:', err.message)
+    }
   } catch (err) {
-    console.warn('[db] pg_trgm unavailable, name search will not be indexed:', err.message)
+    console.warn('[db] pg_trgm unavailable; falling back to substring search:', err.message)
   }
 }
 
@@ -133,24 +141,69 @@ export async function saveRoomMeta(room, name, listed) {
 }
 
 /**
- * Listed notepads only, newest activity first. Deliberately never touches
- * ydoc_state.state: a directory page must not pull Yjs snapshots into memory.
+ * Fuzzy directory search over listed notepads only.
+ *
+ * The `%` operator is a cheap GIN-index pre-filter; `similarity` ranks what
+ * survives. The token branch catches multi-word queries and spelling mistakes
+ * that fall below the operator threshold, and requires every token to match.
+ * Never selects ydoc_state.state.
  */
+const FUZZY_SQL = `
+  WITH params AS (SELECT lower(btrim($1)) AS q)
+  SELECT r.room, r.name, s.updated_at
+    FROM rooms r
+    JOIN ydoc_state s ON s.room = r.room
+    CROSS JOIN params p
+   WHERE r.listed = true
+     AND (
+       p.q = ''
+       OR r.room = p.q
+       OR r.room LIKE p.q || '%'
+       OR r.name ILIKE '%' || p.q || '%'
+       OR r.name % p.q
+       OR NOT EXISTS (
+         SELECT 1
+           FROM unnest(string_to_array(p.q, ' ')) AS t(token)
+          WHERE t.token <> ''
+            AND r.name NOT ILIKE '%' || t.token || '%'
+            AND word_similarity(t.token, r.name) < 0.4
+       )
+     )
+   ORDER BY
+     (r.room = p.q) DESC,
+     (r.room LIKE p.q || '%') DESC,
+     (lower(r.name) = p.q) DESC,
+     (r.name ILIKE p.q || '%') DESC,
+     similarity(r.name, p.q) DESC,
+     s.updated_at DESC
+   LIMIT $2
+`
+
+const BASIC_SQL = `
+  WITH params AS (SELECT lower(btrim($1)) AS q)
+  SELECT r.room, r.name, s.updated_at
+    FROM rooms r
+    JOIN ydoc_state s ON s.room = r.room
+    CROSS JOIN params p
+   WHERE r.listed = true
+     AND (
+       p.q = ''
+       OR r.room = p.q
+       OR r.room LIKE p.q || '%'
+       OR r.name ILIKE '%' || p.q || '%'
+     )
+   ORDER BY
+     (r.room = p.q) DESC,
+     (lower(r.name) = p.q) DESC,
+     s.updated_at DESC
+   LIMIT $2
+`
+
 export async function listRooms(query, limit) {
-  const { rows } = await pool.query(
-    `SELECT r.room, r.name, s.updated_at
-       FROM rooms r
-       JOIN ydoc_state s ON s.room = r.room
-      WHERE r.listed = true
-        AND (
-          $1 = ''
-          OR r.name ILIKE '%' || $1 || '%'
-          OR r.room LIKE $1 || '%'
-        )
-      ORDER BY s.updated_at DESC
-      LIMIT $2`,
-    [query, limit],
-  )
+  const { rows } = await pool.query(trigram ? FUZZY_SQL : BASIC_SQL, [
+    query,
+    limit,
+  ])
   return rows
 }
 

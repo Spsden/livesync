@@ -114,6 +114,22 @@ try {
     'directory search matches an id prefix',
   )
 
+  const typo = await (
+    await fetch(`${base}/api/rooms?q=smoke%20directry`)
+  ).json()
+  assert(
+    typo.rooms.some((entry) => entry.room === room),
+    'fuzzy search tolerates a typo in the name',
+  )
+
+  const reordered = await (
+    await fetch(`${base}/api/rooms?q=directry%20smoke`)
+  ).json()
+  assert(
+    reordered.rooms.some((entry) => entry.room === room),
+    'fuzzy search ignores word order',
+  )
+
   docA.getMap('meta').set('listed', false)
   await wait(1500)
   const unlisted = await (await fetch(`${base}/api/rooms?q=smoke%20directory`)).json()
@@ -121,7 +137,7 @@ try {
     !unlisted.rooms.some((entry) => entry.room === room),
     'unlisted notepad disappears from the directory',
   )
-  console.log('directory: listing, search and unlisting')
+  console.log('directory: listing, fuzzy search and unlisting')
 
   // --- files ---
   const meta = await upload('smoke.txt', 'smoke test body')

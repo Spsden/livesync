@@ -55,7 +55,10 @@ router.get('/api/health', async (_req, res) => {
 // Public directory of notepads their participants chose to list. Read-only,
 // and it never returns document state — see docs/architecture.md.
 router.get('/api/rooms', async (req, res) => {
-  const query = String(req.query.q ?? '').trim().slice(0, 64)
+  const query = String(req.query.q ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 64)
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
 
   try {
