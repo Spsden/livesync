@@ -207,6 +207,14 @@ body {
   background: var(--bg-elev-2);
 }
 
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .btn-ghost:disabled,
 .notepad-name:disabled {
   opacity: 0.5;
@@ -860,6 +868,104 @@ body {
   color: var(--muted);
   font-size: 11px;
   border-top: 1px solid var(--border);
+}
+
+/* --------------------------------------------------------------- search --- */
+
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 16px 16px;
+  background: rgba(5, 7, 10, 0.55);
+}
+
+.search-panel {
+  width: min(600px, 100%);
+  overflow: hidden;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.search-input {
+  width: 100%;
+  padding: 14px 16px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--faint);
+}
+
+.search-meta {
+  min-height: 24px;
+  padding: 6px 16px;
+  color: var(--faint);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-results {
+  max-height: 50vh;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.search-hit {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.search-hit.is-selected {
+  background: var(--bg-elev-2);
+}
+
+.search-tab {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.search-snippet {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-snippet mark {
+  color: var(--text);
+  background: rgba(91, 140, 255, 0.28);
+  border-radius: 3px;
+}
+
+.search-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* --------------------------------------------------------- misc overlay --- */

@@ -18,6 +18,7 @@ type Props = {
   onDeleteNotepad: () => void
   onRename: (name: string) => void
   onToggleListed: () => void
+  onSearch: () => void
   ready: boolean
 }
 
@@ -36,6 +37,7 @@ export function TopBar({
   onDeleteNotepad,
   onRename,
   onToggleListed,
+  onSearch,
   ready,
 }: Props) {
   const visible = users.slice(0, 5)
@@ -76,6 +78,24 @@ export function TopBar({
           }
         }}
       />
+
+      <button
+        type="button"
+        className="btn-ghost icon-btn"
+        onClick={onSearch}
+        title="Search this notepad (Ctrl/⌘ F)"
+        aria-label="Search this notepad"
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" />
+          <path
+            d="M10.5 10.5 14 14"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
 
       <button
         type="button"

@@ -6,6 +6,7 @@ import type { WebsocketProvider } from 'y-websocket'
 import { Editor } from './Editor'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FilesPanel } from './FilesPanel'
+import { NotepadSearch } from './NotepadSearch'
 import { TabBar } from './TabBar'
 import { Toast } from './Toast'
 import { TopBar } from './TopBar'
@@ -19,6 +20,7 @@ import { useYTextHasContent } from '../hooks/useYTextHasContent'
 import { setNotepadListed, setNotepadName, useNotepadMeta } from '../meta'
 import { rememberRoom } from '../recents'
 import { pickColor, uid } from '../ui'
+import type { SearchHit } from '../search'
 import type { FileMeta, PresenceUser, TabMeta } from '../types'
 
 type Props = {
@@ -52,6 +54,12 @@ export function Notepad({ room, doc, provider }: Props) {
   // until the first sync lands. Before that the meta map looks empty and the
   // toggle would offer "Listed" for an already-listed notepad.
   const [ready, setReady] = useState(provider.synced)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [reveal, setReveal] = useState<{
+    tabId: string
+    from: number
+    to: number
+  } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   // Onboarding is a once-per-browser thing: someone opening a shared link for
@@ -65,6 +73,12 @@ export function Notepad({ room, doc, provider }: Props) {
   }, [])
 
   const { pending, upload } = useUploader(room, files, notify)
+
+  const readText = useCallback(
+    (tabId: string) => doc.getText(`tab:${tabId}`).toString(),
+    [doc],
+  )
+  const clearReveal = useCallback(() => setReveal(null), [])
 
   useEffect(() => {
     const onSync = (isSynced: boolean) => setReady(isSynced)
@@ -238,6 +252,12 @@ export function Notepad({ room, doc, provider }: Props) {
     void navigate({ to: '/n/$roomId', params: { roomId: uid(6) } })
   }
 
+  const openSearchHit = (hit: SearchHit) => {
+    setActiveId(hit.tabId)
+    setReveal({ tabId: hit.tabId, from: hit.offset, to: hit.offset + hit.length })
+    setSearchOpen(false)
+  }
+
   const toggleListed = () => {
     const next = !meta.listed
     setNotepadListed(doc, next)
@@ -294,6 +314,22 @@ export function Notepad({ room, doc, provider }: Props) {
       notify(error instanceof Error ? error.message : 'Delete failed.')
     }
   }
+
+  // ------------------------------------------------------------- search ---
+
+  // Capture phase so Cmd/Ctrl+F opens the notepad-wide search instead of
+  // CodeMirror's single-tab find (which also binds Mod-f).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        event.stopPropagation()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
 
   // ------------------------------------------------------- drop and paste ---
 
@@ -395,6 +431,7 @@ export function Notepad({ room, doc, provider }: Props) {
         onDeleteNotepad={() => setConfirmDelete(true)}
         onRename={(name) => setNotepadName(doc, name)}
         onToggleListed={toggleListed}
+        onSearch={() => setSearchOpen(true)}
         ready={ready}
       />
 
@@ -416,6 +453,10 @@ export function Notepad({ room, doc, provider }: Props) {
               ytext={doc.getText(`tab:${activeTab.id}`)}
               awareness={provider.awareness}
               undoManager={undoManagerFor(activeTab.id)}
+              reveal={
+                reveal && reveal.tabId === activeTab.id ? reveal : null
+              }
+              onRevealed={clearReveal}
             />
           ) : (
             <div className="editor-host">
@@ -475,6 +516,14 @@ export function Notepad({ room, doc, provider }: Props) {
           onDelete={(file) => void removeFile(file)}
         />
       </div>
+
+      <NotepadSearch
+        open={searchOpen}
+        tabs={tabList}
+        readText={readText}
+        onClose={() => setSearchOpen(false)}
+        onOpenResult={openSearchHit}
+      />
 
       <Toast message={toast?.message ?? null} />
       <div className="drop-overlay">Drop to add files</div>
