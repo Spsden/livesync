@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type * as Y from 'yjs'
+import { deriveTitle, hasManualTitle } from '../tab-title'
 import type { TabMeta } from '../types'
 
 type Props = {
+  doc: Y.Doc
   tabs: TabMeta[]
   activeId: string | null
   onSelect: (id: string) => void
@@ -13,7 +16,37 @@ type Props = {
 
 type Editing = { id: string; draft: string }
 
+function TabLabel({ tab, doc }: { tab: TabMeta; doc: Y.Doc }) {
+  const manual = hasManualTitle(tab)
+  const [derived, setDerived] = useState(() =>
+    deriveTitle(doc.getText(`tab:${tab.id}`).toString()),
+  )
+
+  useEffect(() => {
+    if (manual) return
+    const ytext = doc.getText(`tab:${tab.id}`)
+
+    let timer: number | undefined
+    const update = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        setDerived(deriveTitle(ytext.toString()))
+      }, 250)
+    }
+
+    ytext.observe(update)
+    update()
+    return () => {
+      window.clearTimeout(timer)
+      ytext.unobserve(update)
+    }
+  }, [doc, tab.id, manual])
+
+  return <span className="tab-title">{manual ? tab.title : derived}</span>
+}
+
 export function TabBar({
+  doc,
   tabs,
   activeId,
   onSelect,
@@ -52,7 +85,14 @@ export function TabBar({
                 onSelect(tab.id)
               }
             }}
-            onDoubleClick={() => setEditing({ id: tab.id, draft: tab.title })}
+            onDoubleClick={() =>
+              setEditing({
+                id: tab.id,
+                draft: hasManualTitle(tab)
+                  ? tab.title
+                  : deriveTitle(doc.getText(`tab:${tab.id}`).toString()),
+              })
+            }
             onDragStart={(event) => {
               event.dataTransfer.setData('text/plain', tab.id)
               event.dataTransfer.effectAllowed = 'move'
@@ -86,7 +126,7 @@ export function TabBar({
                 }}
               />
             ) : (
-              <span className="tab-title">{tab.title.trim() || 'untitled'}</span>
+              <TabLabel tab={tab} doc={doc} />
             )}
 
             <button

@@ -458,6 +458,7 @@ export function Notepad({ room, doc, provider, locked }: Props) {
       />
 
       <TabBar
+        doc={doc}
         tabs={tabList}
         activeId={activeId}
         onSelect={setActiveId}

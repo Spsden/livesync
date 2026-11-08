@@ -110,7 +110,10 @@ release:
 14. At 390px wide there is no horizontal overflow: the top bar collapses to
     share/search/menu, the menu reaches rename, listing, files, new and delete,
     the files drawer closes, and the search placeholder is not clipped.
-15. No console errors or unhandled page errors in either context.
+15. A tab with no manual title shows its first non-empty line (markdown marker
+    stripped, clipped with an ellipsis); renaming pins the title against further
+    edits; both survive a reload.
+16. No console errors or unhandled page errors in either context.
 
 Recipe if you want to rebuild it: `npm i -D playwright-core`, point `CHROME` at a
 Chromium/Chrome binary (or `npx playwright install chromium` once), drive two

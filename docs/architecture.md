@@ -130,6 +130,10 @@ Why this shape:
 - **`meta` is the notepad's own identity**, not tab content: its title and
   whether it is published to the directory. Both sync like anything else, which
   gives live renames and lets the server mirror them.
+- **Tab titles are derived at display time** when a tab has no manual title: the
+  first non-empty line, markdown markers stripped, clipped to 8 words / 42
+  characters. Nothing is written, so every client computes the same label live
+  without per-keystroke `Y.Array` churn — and a manual rename always wins.
 
 Root-level key naming is part of the schema: `tab:` prefixes are load-bearing.
 Renaming a root key is a data migration.
