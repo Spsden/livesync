@@ -5,7 +5,8 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { config, isValidRoom } from './config.js'
-import { insertFile, getFile, deleteFileRecord } from './db.js'
+import { insertFileWithinQuota, getFile, deleteFileRecord } from './db.js'
+import { addFileBytes, currentNoteBytes } from './rooms.js'
 import { requireRoomAccess, roomAccess } from './pin.js'
 
 export const filesDir = path.join(config.dataDir, 'files')
@@ -60,6 +61,8 @@ filesRouter.post('/rooms/:room/files', requireRoomAccess, (req, res, next) => {
   const id = randomUUID()
   const name = sanitizeName(file.originalname)
   const mime = file.mimetype || 'application/octet-stream'
+  // Unsaved edits count toward the budget, so encode the live doc when loaded.
+  const noteBytes = currentNoteBytes(room)
 
   // The on-disk name is a uuid we generated. The user-supplied name never
   // touches the path, so traversal and collision are both impossible.
@@ -70,15 +73,31 @@ filesRouter.post('/rooms/:room/files', requireRoomAccess, (req, res, next) => {
     return res.status(500).json({ error: 'could not store file' })
   }
 
-  const meta = { id, room, name, mime, size: file.size }
   try {
-    await insertFile(meta)
+    const inserted = await insertFileWithinQuota({
+      id,
+      room,
+      name,
+      mime,
+      size: file.size,
+      limit: config.maxNotepadBytes,
+      noteBytes,
+    })
+
+    if (!inserted.ok) {
+      await fsp.rm(path.join(filesDir, id), { force: true })
+      const limitMb = Math.round(config.maxNotepadBytes / 1024 / 1024)
+      return res.status(413).json({
+        error: `This notepad is at its ${limitMb} MB storage limit. Delete something to upload more.`,
+      })
+    }
   } catch (err) {
     await fsp.rm(path.join(filesDir, id), { force: true })
     console.error('[files] row failed:', err)
     return res.status(500).json({ error: 'could not record file' })
   }
 
+  addFileBytes(room, file.size)
   res.json({ id, name, mime, size: file.size, url: `/api/files/${id}` })
 })
 
@@ -92,6 +111,7 @@ filesRouter.delete('/rooms/:room/files/:id', requireRoomAccess, async (req, res)
   if (!row) return res.status(404).json({ error: 'not found' })
 
   await removeBlobs([row.id])
+  addFileBytes(room, -Number(row.size ?? 0))
   res.json({ ok: true, id: row.id })
 })
 

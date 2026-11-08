@@ -107,11 +107,67 @@ export async function saveRoomState(room, state) {
   )
 }
 
-export async function insertFile({ id, room, name, mime, size }) {
-  await pool.query(
-    'INSERT INTO room_files (id, room, name, mime, size) VALUES ($1, $2, $3, $4, $5)',
-    [id, room, name, mime, size],
+export async function fileBytesForRoom(room) {
+  const { rows } = await pool.query(
+    'SELECT COALESCE(SUM(size), 0) AS bytes FROM room_files WHERE room = $1',
+    [room],
   )
+  return Number(rows[0]?.bytes ?? 0)
+}
+
+/**
+ * Inserts a file row only if the notepad's combined budget allows it.
+ *
+ * The advisory lock serialises concurrent uploads to the same room, otherwise
+ * two requests could each see room left and both commit. `noteBytes` is passed
+ * by the caller when the document is in memory, so unsaved edits count too.
+ */
+export async function insertFileWithinQuota({
+  id,
+  room,
+  name,
+  mime,
+  size,
+  limit,
+  noteBytes = null,
+}) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [room])
+
+    let notes = noteBytes
+    if (notes === null) {
+      const noteRow = await client.query(
+        'SELECT length(state) AS bytes FROM ydoc_state WHERE room = $1',
+        [room],
+      )
+      notes = Number(noteRow.rows[0]?.bytes ?? 0)
+    }
+
+    const fileRow = await client.query(
+      'SELECT COALESCE(SUM(size), 0) AS bytes FROM room_files WHERE room = $1',
+      [room],
+    )
+    const used = notes + Number(fileRow.rows[0]?.bytes ?? 0)
+
+    if (used + size > limit) {
+      await client.query('ROLLBACK')
+      return { ok: false, used }
+    }
+
+    await client.query(
+      'INSERT INTO room_files (id, room, name, mime, size) VALUES ($1, $2, $3, $4, $5)',
+      [id, room, name, mime, size],
+    )
+    await client.query('COMMIT')
+    return { ok: true, used: used + size }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function getFile(id) {
@@ -124,7 +180,7 @@ export async function getFile(id) {
 
 export async function deleteFileRecord(room, id) {
   const { rows } = await pool.query(
-    'DELETE FROM room_files WHERE id = $1 AND room = $2 RETURNING id, name',
+    'DELETE FROM room_files WHERE id = $1 AND room = $2 RETURNING id, name, size',
     [id, room],
   )
   return rows[0] ?? null

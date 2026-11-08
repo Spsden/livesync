@@ -52,6 +52,7 @@ export function Notepad({ room, doc, provider, locked }: Props) {
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [gone, setGone] = useState(false)
+  const [full, setFull] = useState(false)
   // Name and listing live in the document, so both controls are meaningless
   // until the first sync lands. Before that the meta map looks empty and the
   // toggle would offer "Listed" for an already-listed notepad.
@@ -122,6 +123,9 @@ export function Notepad({ room, doc, provider, locked }: Props) {
     // stops reconnecting for 4400-4499, so we just need to say so.
     const onClosed = (event: { code: number }) => {
       if (event.code === 4404) setGone(true)
+      // 4413: the notepad hit its storage budget. The last snapshot that fit is
+      // still in Postgres, so a reload resumes from there.
+      else if (event.code === 4413) setFull(true)
       // The unlock cookie expired or was invalidated: re-run the access check
       // so the password screen replaces the dead editor.
       else if (event.code === 4403) window.location.reload()
@@ -420,6 +424,26 @@ export function Notepad({ room, doc, provider, locked }: Props) {
     tabList.length === 1 &&
     fileList.length === 0 &&
     (tabList[0]?.title ?? 'untitled') === 'untitled'
+
+  if (full) {
+    return (
+      <div className="gone-state">
+        <h1 className="gone-title">This notepad is full</h1>
+        <p className="gone-body">
+          It reached the storage limit, so your latest changes were not saved.
+          Copy anything you need, then reload to continue from the last saved
+          version. Removing content or files frees the budget again.
+        </p>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => window.location.reload()}
+        >
+          Reload notepad
+        </button>
+      </div>
+    )
+  }
 
   if (gone) {
     return (

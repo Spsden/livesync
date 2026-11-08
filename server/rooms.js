@@ -7,6 +7,7 @@ import {
   deleteRoomRecords,
   ensureRoom,
   saveRoomMeta,
+  fileBytesForRoom,
 } from './db.js'
 import { sendSyncUpdate, sendAwareness } from './sync.js'
 
@@ -15,6 +16,8 @@ import { sendSyncUpdate, sendAwareness } from './sync.js'
 export const CLOSE_ROOM_DELETED = 4404
 /** Same permanent range: clients stop retrying and ask for the password. */
 export const CLOSE_ROOM_LOCKED = 4403
+/** The notepad hit its storage budget; the last saved snapshot is kept. */
+export const CLOSE_ROOM_FULL = 4413
 
 /** @type {Map<string, any>} */
 const rooms = new Map()
@@ -65,6 +68,9 @@ async function createRoom(name) {
     conns: new Set(),
     timer: null,
     metaTimer: null,
+    /** Cached attachment bytes, kept in step with upload/delete. */
+    fileBytes: 0,
+    oversize: false,
     /** In-flight save, awaited before deleting so it can't resurrect the row. */
     saving: null,
     deleted: false,
@@ -84,6 +90,11 @@ async function createRoom(name) {
     await ensureRoom(name, initialMeta.name, initialMeta.listed)
   } catch (err) {
     console.error(`[rooms] could not seed directory row for ${name}:`, err)
+  }
+  try {
+    room.fileBytes = await fileBytesForRoom(name)
+  } catch (err) {
+    console.error(`[rooms] could not total files for ${name}:`, err)
   }
   doc.getMap('meta').observe(() => scheduleMetaSave(room))
 
@@ -108,6 +119,55 @@ async function createRoom(name) {
   })
 
   return room
+}
+
+/**
+ * Hard stop for the storage budget. Deliberately not a tombstone: the room is
+ * dropped from memory so the next connection reads the last snapshot that fit,
+ * and clients are closed 4413 so they stop pushing more.
+ */
+function failOversize(room, noteBytes) {
+  if (room.oversize) return
+  room.oversize = true
+  if (room.timer) {
+    clearTimeout(room.timer)
+    room.timer = null
+  }
+  if (room.metaTimer) {
+    clearTimeout(room.metaTimer)
+    room.metaTimer = null
+  }
+
+  rooms.delete(room.name)
+  console.error(
+    `[rooms] ${room.name} exceeded the ${config.maxNotepadBytes}-byte budget ` +
+      `(notes ${noteBytes} + files ${room.fileBytes}); keeping the last saved snapshot`,
+  )
+
+  for (const conn of room.conns) {
+    try {
+      conn.close(CLOSE_ROOM_FULL, 'notepad is full')
+    } catch {
+      conn.terminate()
+    }
+  }
+  room.conns.clear()
+  room.awareness.destroy()
+  room.doc.destroy()
+}
+
+/** Encoded size of the live document, or null when it is not loaded. */
+export function currentNoteBytes(name) {
+  const room = rooms.get(name)
+  if (!room || room.deleted || room.oversize) return null
+  return Y.encodeStateAsUpdate(room.doc).length
+}
+
+/** Keep the cached attachment total in step with uploads and deletes. */
+export function addFileBytes(name, delta) {
+  const room = rooms.get(name)
+  if (!room || room.deleted || room.oversize) return
+  room.fileBytes = Math.max(0, room.fileBytes + delta)
 }
 
 function scheduleMetaSave(room) {
@@ -140,6 +200,12 @@ export async function flushRoom(room) {
     room.timer = null
   }
   const state = Y.encodeStateAsUpdate(room.doc)
+
+  if (state.length + room.fileBytes > config.maxNotepadBytes) {
+    failOversize(room, state.length)
+    return
+  }
+
   const saving = saveRoomState(room.name, state)
   room.saving = saving
   try {

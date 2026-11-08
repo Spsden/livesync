@@ -31,13 +31,7 @@ export function uploadFile(
         }
         return
       }
-      reject(
-        new Error(
-          xhr.status === 413
-            ? 'That file is bigger than the limit for this notepad.'
-            : `Upload failed (${xhr.status}).`,
-        ),
-      )
+      reject(new Error(uploadError(xhr.status, xhr.responseText)))
     })
 
     xhr.addEventListener('error', () =>
@@ -46,6 +40,17 @@ export function uploadFile(
 
     xhr.send(form)
   })
+}
+
+function uploadError(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: string }
+    if (parsed.error) return parsed.error
+  } catch {
+    // not JSON; fall back to the status
+  }
+  if (status === 413) return 'That file is bigger than the limit for this notepad.'
+  return `Upload failed (${status}).`
 }
 
 /** 404 is treated as success: the goal is "this file is gone", not a receipt. */

@@ -36,7 +36,10 @@ export const config = {
   host: env.HOST ?? '0.0.0.0',
   databaseUrl: env.DATABASE_URL ?? defaultDatabaseUrl(),
   dataDir: env.DATA_DIR ?? './data',
-  maxFileBytes: Number(env.MAX_FILE_BYTES ?? 25 * 1024 * 1024),
+  // Per-file ceiling. A file can never exceed the notepad budget below.
+  maxFileBytes: Number(env.MAX_FILE_BYTES ?? 20 * 1024 * 1024),
+  // Combined budget per notepad: encoded Yjs snapshot + all attachment bytes.
+  maxNotepadBytes: Number(env.MAX_NOTEPAD_BYTES ?? 20 * 1024 * 1024),
   // How long to batch doc changes before writing the merged state to Postgres.
   // A crash can lose at most this window.
   flushDelayMs: Number(env.FLUSH_DELAY_MS ?? 750),
