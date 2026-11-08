@@ -72,7 +72,14 @@ const router = express.Router()
 router.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1')
-    res.json({ ok: true, rooms: roomCount() })
+    res.json({
+      ok: true,
+      rooms: roomCount(),
+      limits: {
+        fileBytes: config.maxFileBytes,
+        notepadBytes: config.maxNotepadBytes,
+      },
+    })
   } catch (err) {
     res.status(503).json({ ok: false, error: String(err) })
   }

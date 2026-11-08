@@ -12,7 +12,8 @@ All paths are relative to `BASE_PATH` (empty by default, e.g. `/livesync`).
 Reports database reachability and how many rooms are resident in memory.
 
 ```json
-{ "ok": true, "rooms": 2 }
+{ "ok": true, "rooms": 2,
+  "limits": { "fileBytes": 20971520, "notepadBytes": 20971520 } }
 ```
 
 - `200` — database responded.
