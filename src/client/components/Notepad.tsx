@@ -18,8 +18,9 @@ import { useUploader } from '../hooks/useUploader'
 import { useYArray } from '../hooks/useYArray'
 import { useYTextHasContent } from '../hooks/useYTextHasContent'
 import { setNotepadListed, setNotepadName, useNotepadMeta } from '../meta'
+import { fetchUsage, type NotepadUsage } from '../usage'
 import { rememberRoom } from '../recents'
-import { pickColor, uid } from '../ui'
+import { formatBytes, pickColor, uid } from '../ui'
 import type { SearchHit } from '../search'
 import type { FileMeta, PresenceUser, TabMeta } from '../types'
 
@@ -53,6 +54,8 @@ export function Notepad({ room, doc, provider, locked }: Props) {
   const [dragging, setDragging] = useState(false)
   const [gone, setGone] = useState(false)
   const [full, setFull] = useState(false)
+  const [usage, setUsage] = useState<NotepadUsage | null>(null)
+  const warnedFull = useRef(false)
   // Name and listing live in the document, so both controls are meaningless
   // until the first sync lands. Before that the meta map looks empty and the
   // toggle would offer "Listed" for an already-listed notepad.
@@ -95,6 +98,46 @@ export function Notepad({ room, doc, provider, locked }: Props) {
     if (!ready || locked || !meta.listed) return
     setNotepadListed(doc, false)
   }, [ready, locked, meta.listed, doc])
+
+  // Cheap poll (cached server-side) plus an immediate refresh whenever the
+  // file or tab lists change, so deleting something is reflected at once.
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      fetchUsage(room)
+        .then((next) => {
+          if (!cancelled) setUsage(next)
+        })
+        .catch(() => {})
+    }
+    load()
+    const timer = window.setInterval(load, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [room])
+
+  useEffect(() => {
+    fetchUsage(room)
+      .then(setUsage)
+      .catch(() => {})
+  }, [room, fileList.length, tabList.length])
+
+  useEffect(() => {
+    if (!usage || usage.limit <= 0) return
+    const ratio = usage.used / usage.limit
+    if (ratio >= 0.9 && !warnedFull.current) {
+      warnedFull.current = true
+      notify(
+        `Storage almost full — ${formatBytes(usage.used)} of ${formatBytes(
+          usage.limit,
+        )}. Delete old notes or files.`,
+      )
+    } else if (ratio < 0.8) {
+      warnedFull.current = false
+    }
+  }, [usage, notify])
 
   useEffect(() => {
     rememberRoom(room, meta.name)
@@ -431,8 +474,8 @@ export function Notepad({ room, doc, provider, locked }: Props) {
         <h1 className="gone-title">This notepad is full</h1>
         <p className="gone-body">
           It reached the storage limit, so your latest changes were not saved.
-          Copy anything you need, then reload to continue from the last saved
-          version. Removing content or files frees the budget again.
+          Copy anything you need, then reload and delete unused tabs or files to
+          free space.
         </p>
         <button
           type="button"
@@ -481,16 +524,36 @@ export function Notepad({ room, doc, provider, locked }: Props) {
         canList={locked}
       />
 
-      <TabBar
-        doc={doc}
-        tabs={tabList}
-        activeId={activeId}
-        onSelect={setActiveId}
-        onAdd={createTab}
-        onRename={renameTab}
-        onClose={closeTab}
-        onReorder={reorderTabs}
-      />
+      <div className="tabrow">
+        <TabBar
+          doc={doc}
+          tabs={tabList}
+          activeId={activeId}
+          onSelect={setActiveId}
+          onAdd={createTab}
+          onRename={renameTab}
+          onClose={closeTab}
+          onReorder={reorderTabs}
+        />
+        {usage && (
+          <span
+            className={`usage${
+              usage.used >= usage.limit
+                ? ' is-full'
+                : usage.used >= usage.limit * 0.9
+                  ? ' is-warn'
+                  : ''
+            }`}
+            title={
+              usage.used >= usage.limit
+                ? 'Notepad is full — delete old notes or files'
+                : 'Storage used in this notepad'
+            }
+          >
+            {formatBytes(usage.used)} of {formatBytes(usage.limit)}
+          </span>
+        )}
+      </div>
 
       <div className="workspace">
         <div className="editor-wrap">

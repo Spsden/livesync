@@ -6,9 +6,13 @@ export function uid(bytes = 8): string {
 
 export function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
-  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1).replace(/\.0$/, '')} KB`
+  }
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
+  }
+  return `${(size / 1024 / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} GB`
 }
 
 export function initials(name: string): string {

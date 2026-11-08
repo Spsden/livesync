@@ -384,15 +384,43 @@ body {
 
 /* ----------------------------------------------------------------- tabs --- */
 
-.tabs {
+.tabrow {
   display: flex;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
   gap: 6px;
   padding: 0 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
   scrollbar-width: none;
+}
+
+.usage {
+  flex: none;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.usage.is-warn {
+  color: var(--warn);
+}
+
+.usage.is-full {
+  color: var(--danger);
 }
 
 .tabs::-webkit-scrollbar {
