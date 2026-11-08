@@ -76,6 +76,23 @@ mode during development.
 **The delete timing.** Deleting after the debounce has elapsed tests the happy
 path only. The 100 ms delay is deliberate.
 
+## Storage limits
+
+The budget needs small values to test quickly, so run a throwaway instance
+against the same database (unique room ids, no shared rooms):
+
+```sh
+PORT=3210 HOST=127.0.0.1 DATA_DIR=/tmp/limits \
+MAX_NOTEPAD_BYTES=1048576 MAX_FILE_BYTES=1048576 \
+node --env-file-if-exists=.env server/index.js
+
+BASE=http://127.0.0.1:3210 LIMIT_MB=1 npm run limits
+```
+
+It asserts: a second upload past the budget returns `413` with a message, an
+over-budget note closes the websocket with `4413`, and a reconnecting client
+receives the last snapshot that fit rather than the oversized one.
+
 ## Browser-level checks (optional, not committed)
 
 A Playwright harness was used during development to validate the real UI. It is

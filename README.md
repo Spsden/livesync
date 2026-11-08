@@ -11,6 +11,8 @@ notepad with tabs, live multi-cursor editing, and file attachments. No accounts.
   unlisted and reachable only by its link.
 - Protect a notepad with a password at creation. Public listings always require
   it; the lock covers the editor, attachments and deletion.
+- 20 MB per notepad, notes and attachments combined — a hard budget, not a soft
+  warning; 20 MB per individual file.
 - Everything persists until someone deletes it. Deleting really deletes.
 
 ## Documentation

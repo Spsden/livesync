@@ -48,6 +48,8 @@ DATA_DIR=./data
 DB_PORT=5433            # wherever Postgres is reachable from this host
 BASE_PATH=              # empty: dedicated subdomain
 COOKIE_SECRET=<openssl rand -hex 32>   # otherwise restarts log everyone out
+MAX_NOTEPAD_BYTES=20971520             # notes + attachments per notepad
+MAX_FILE_BYTES=20971520                # single attachment
 ```
 
 Verify before involving the edge:

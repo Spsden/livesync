@@ -117,7 +117,7 @@ curl -F "file=@notes.pdf" https://livesync.example.com/api/rooms/abc123/files
 | `200` | stored |
 | `400` | invalid room, missing `file` field, or malformed multipart |
 | `401` | the notepad is locked and this request has no unlock cookie |
-| `413` | exceeds `MAX_FILE_BYTES` |
+| `413` | exceeds `MAX_FILE_BYTES`, or the notepad's combined budget (`MAX_NOTEPAD_BYTES`). Body carries the reason |
 | `500` | disk or database write failed (blob is rolled back on row failure) |
 
 The room is **not** required to exist. Uploading to an arbitrary valid room id
@@ -197,7 +197,8 @@ Parsed in `server/config.js`. Blank values fall through to defaults.
 | `DB_HOST` | `127.0.0.1` | Postgres host |
 | `DB_PORT` | `PG_PORT`, else `5432` | Postgres port for bare-metal runs |
 | `PG_PORT` | `5433` | Host port Compose publishes Postgres on; also the bare-metal fallback |
-| `MAX_FILE_BYTES` | `26214400` (25 MB) | Per-file ceiling |
+| `MAX_FILE_BYTES` | `20971520` (20 MB) | Per-file ceiling |
+| `MAX_NOTEPAD_BYTES` | `20971520` (20 MB) | Combined budget per notepad: encoded Yjs snapshot + all attachment bytes |
 | `COOKIE_SECRET` | random per boot | Signs unlock cookies; unset means every restart logs people out |
 | `COOKIE_MAX_AGE_MS` | `604800000` (7 days) | Unlock cookie lifetime |
 | `PIN_ATTEMPTS` | `5` | Failed unlocks allowed per window |
@@ -271,16 +272,22 @@ revision history.
 | Thing | Limit | Enforced by |
 | --- | --- | --- |
 | Room id | 1–64 chars, `[A-Za-z0-9_-]` | `isValidRoom` at every entry point |
-| Upload size | `MAX_FILE_BYTES` (25 MB) | multer |
+| Upload size | `MAX_FILE_BYTES` (20 MB) | multer |
+| Notepad storage | `MAX_NOTEPAD_BYTES` (20 MB) combined: encoded note snapshot + attachments | upload transaction (advisory lock) and snapshot flush |
 | Upload concurrency | unbounded, buffered in RAM per request | — |
-| Files per notepad | unbounded | — |
-| Text per notepad | unbounded | — |
+| Files per notepad | bounded by the notepad budget | — |
+| Text per notepad | bounded by the notepad budget | — |
 | Open rooms | bounded by RAM, not by config | — |
 
 ## Known gaps
 
 - **No rate limiting.** A public instance can be filled with rooms, files, or
   requests. Put Cloudflare Access or a rate-limit rule in front if that matters.
+- **The budget is per notepad, not per person.** There are no accounts; anyone
+  who can write to a notepad consumes its 20 MB.
+- **Over-budget notes are not saved.** The last snapshot that fit is kept and
+  clients are closed with `4413`; the overflow exists only in the browser that
+  produced it.
 - **Uploads do not require the notepad to exist.** A blob uploaded to a valid but
   never-opened room id keeps its row, so GC will not reclaim it unless that room
   is deleted.

@@ -192,6 +192,10 @@ Break one of these and the failure is silent data loss, not an error.
   delete, notepad delete. A lock that misses one surface is not a lock.
 - **I11 — Publishing requires a password.** The directory exposes names and ids;
   discoverability must never imply access.
+- **I12 — The per-notepad budget is enforced before persistence.** Uploads check
+  it inside a transaction under an advisory lock; a snapshot that would exceed
+  it is not written, the room is dropped from memory and clients are closed
+  `4413`. The budget covers the encoded note snapshot plus every attachment.
 
 ## 8. Flows
 
@@ -338,6 +342,10 @@ a multi-megabyte notepad would want a worker or an incremental index.
 - **Load model:** read snapshot, `applyUpdate`, then attach listeners (restoring
   state must not count as a change, or every cold start rewrites the row).
 - **Compaction:** not needed. Full-state snapshots are self-compacting.
+- **Budget:** `MAX_NOTEPAD_BYTES` (20 MB) covers the encoded snapshot plus all
+  attachment bytes. A save that would exceed it is rejected rather than written,
+  so Postgres never holds an over-budget document; the last good snapshot stays
+  authoritative.
 - **Eviction:** rooms with no connections, no pending timer and no in-flight
   save are dropped from memory after `IDLE_ROOM_MS` (10 min). They reload from
   Postgres on demand.
