@@ -5,9 +5,15 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { config, isValidRoom } from './config.js'
-import { insertFileWithinQuota, getFile, deleteFileRecord } from './db.js'
+import {
+  insertFileWithinQuota,
+  getFile,
+  deleteFileRecord,
+  totalFileBytes,
+} from './db.js'
 import { addFileBytes, currentNoteBytes } from './rooms.js'
 import { requireRoomAccess, roomAccess } from './pin.js'
+import { httpLimit } from './ratelimit.js'
 
 export const filesDir = path.join(config.dataDir, 'files')
 
@@ -38,7 +44,15 @@ const upload = multer({
 
 export const filesRouter = Router()
 
-filesRouter.post('/rooms/:room/files', requireRoomAccess, (req, res, next) => {
+filesRouter.post('/rooms/:room/files', requireRoomAccess,
+  // Before multer: reject flooders without paying for a 20MB body parse.
+  httpLimit({
+    limit: config.uploadLimit,
+    windowMs: config.uploadWindowMs,
+    keyPrefix: 'upload',
+    message: 'too many uploads — try again later',
+  }),
+  (req, res, next) => {
   const { room } = req.params
   if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
 
@@ -61,6 +75,21 @@ filesRouter.post('/rooms/:room/files', requireRoomAccess, (req, res, next) => {
   const id = randomUUID()
   const name = sanitizeName(file.originalname)
   const mime = file.mimetype || 'application/octet-stream'
+
+  // Global storage ceiling: per-notepad quotas bound one room, this bounds
+  // the whole service. Two concurrent uploads can overshoot by one file —
+  // acceptable; the GC reclaims anything truly orphaned.
+  try {
+    if ((await totalFileBytes()) + file.size > config.maxTotalFileBytes) {
+      return res
+        .status(503)
+        .json({ error: 'storage is full — the service cannot accept files' })
+    }
+  } catch (err) {
+    console.error('[files] global quota check failed:', err)
+    return res.status(500).json({ error: 'could not store file' })
+  }
+
   // Unsaved edits count toward the budget, so encode the live doc when loaded.
   const noteBytes = currentNoteBytes(room)
 

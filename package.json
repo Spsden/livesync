@@ -13,6 +13,7 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
+    "abuse": "node scripts/abuse.mjs",
     "gc": "node --env-file-if-exists=.env scripts/gc.mjs",
     "limits": "node scripts/limits.mjs"
   },

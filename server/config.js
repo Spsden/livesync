@@ -51,6 +51,28 @@ export const config = {
   cookieMaxAgeMs: Number(env.COOKIE_MAX_AGE_MS ?? 7 * 24 * 60 * 60 * 1000),
   pinAttempts: Number(env.PIN_ATTEMPTS ?? 5),
   pinWindowMs: Number(env.PIN_WINDOW_MS ?? 5 * 60 * 1000),
+
+  // ---- abuse ceilings -------------------------------------------------------
+  // Per-IP HTTP budgets. Normal app use is a handful of requests a minute —
+  // the SPA talks almost exclusively over WebSocket once loaded.
+  httpLimit: Number(env.HTTP_LIMIT ?? 600),
+  httpWindowMs: Number(env.HTTP_WINDOW_MS ?? 5 * 60 * 1000),
+  // Room creation is unauthenticated by design, so it needs its own tight
+  // budget: it is the one endpoint that can grow the database without a URL.
+  createLimit: Number(env.CREATE_LIMIT ?? 10),
+  createWindowMs: Number(env.CREATE_WINDOW_MS ?? 60 * 60 * 1000),
+  uploadLimit: Number(env.UPLOAD_LIMIT ?? 30),
+  uploadWindowMs: Number(env.UPLOAD_WINDOW_MS ?? 60 * 60 * 1000),
+  // Global ceilings: even within per-IP budgets, the service as a whole must
+  // never be able to fill the disk or grow rooms without bound.
+  maxRooms: Number(env.MAX_ROOMS ?? 2000),
+  maxTotalFileBytes: Number(env.MAX_TOTAL_FILE_BYTES ?? 5 * 1024 * 1024 * 1024),
+  // WebSocket ceilings. Payload is small: Yjs updates and awareness frames
+  // are bytes-to-kilobytes, so 256KB is generous.
+  wsMaxPayloadBytes: Number(env.WS_MAX_PAYLOAD_BYTES ?? 256 * 1024),
+  wsMaxPerIp: Number(env.WS_MAX_PER_IP ?? 20),
+  wsMaxTotal: Number(env.WS_MAX_TOTAL ?? 500),
+  wsMsgPerSec: Number(env.WS_MSG_PER_SEC ?? 300),
 }
 
 // Room names are the only secret in the system, so they are URL-safe and

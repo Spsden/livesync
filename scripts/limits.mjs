@@ -51,11 +51,46 @@ try {
 
   const first = await upload(filesRoom, Math.round(budget * 0.6))
   assert(first.ok, `first upload accepted (${first.status})`)
+  const firstFile = await first.json()
+
+  const usedAfterFirst = await (
+    await fetch(`${base}/api/rooms/${filesRoom}/usage`)
+  ).json()
+  assert(
+    usedAfterFirst.used >= Math.round(budget * 0.6),
+    `usage reports the upload (${usedAfterFirst.used})`,
+  )
+  assert(usedAfterFirst.limit === budget, `usage reports the budget (${usedAfterFirst.limit})`)
 
   const second = await upload(filesRoom, Math.round(budget * 0.6))
   assert(second.status === 413, `second upload refused (${second.status})`)
   const body = await second.json().catch(() => ({}))
-  console.log(`files: ${first.status} then ${second.status} — ${body.error ?? ''}`)
+
+  const usedAfterReject = await (
+    await fetch(`${base}/api/rooms/${filesRoom}/usage`)
+  ).json()
+  assert(
+    usedAfterReject.used === usedAfterFirst.used,
+    'a refused upload does not change usage',
+  )
+
+  const removed = await fetch(
+    `${base}/api/rooms/${filesRoom}/files/${firstFile.id}`,
+    { method: 'DELETE' },
+  )
+  assert(removed.ok, `file delete accepted (${removed.status})`)
+
+  const usedAfterDelete = await (
+    await fetch(`${base}/api/rooms/${filesRoom}/usage`)
+  ).json()
+  assert(usedAfterDelete.used === 0, 'deleting the file frees the budget')
+
+  console.log(
+    `files: ${first.status} then ${second.status} — ${body.error ?? ''}`,
+  )
+  console.log(
+    `usage: ${usedAfterFirst.used} -> ${usedAfterReject.used} -> ${usedAfterDelete.used}`,
+  )
 
   await deleteRoom(filesRoom)
 

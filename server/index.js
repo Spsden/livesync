@@ -12,7 +12,11 @@ import {
   listRooms,
   createRoomRow,
   getRoomAccess,
+  noteBytesForRoom,
+  fileBytesForRoom,
+  countRooms,
 } from './db.js'
+import { httpLimit, messageBucket, clientIp } from './ratelimit.js'
 import {
   MIN_PIN_LENGTH,
   clearPinFailures,
@@ -36,6 +40,7 @@ import {
   flushAll,
   sweepIdleRooms,
   roomCount,
+  localUsage,
   CLOSE_ROOM_DELETED,
   CLOSE_ROOM_LOCKED,
 } from './rooms.js'
@@ -68,6 +73,17 @@ app.use((req, res, next) => {
 // path. The client is built with the same prefix (Vite `base`), so absolute
 // URLs in the bundle already line up.
 const router = express.Router()
+
+// First thing on the router: a per-IP budget for every HTTP request, so no
+// single visitor can keep the event loop or Postgres busy on its own.
+router.use(
+  httpLimit({
+    limit: config.httpLimit,
+    windowMs: config.httpWindowMs,
+    keyPrefix: 'http',
+    message: 'too many requests — slow down',
+  }),
+)
 
 router.get('/api/health', async (_req, res) => {
   try {
@@ -112,7 +128,17 @@ router.get('/api/rooms', async (req, res) => {
 
 // Create a notepad explicitly so a password can be set before it is ever
 // opened. Ids are generated client-side; a collision returns 409.
-router.post('/api/rooms', async (req, res) => {
+router.post(
+  '/api/rooms',
+  // Unauthenticated by design, so this needs the tightest per-IP budget on
+  // the server: it is the one endpoint that grows the database without a URL.
+  httpLimit({
+    limit: config.createLimit,
+    windowMs: config.createWindowMs,
+    keyPrefix: 'create',
+    message: 'too many notepads created — try again later',
+  }),
+  async (req, res) => {
   const body = req.body ?? {}
   const room = typeof body.room === 'string' ? body.room : ''
   const pin = typeof body.pin === 'string' && body.pin !== '' ? body.pin : null
@@ -125,6 +151,12 @@ router.post('/api/rooms', async (req, res) => {
   }
 
   try {
+    // Global ceiling: per-IP budgets alone can't stop a botnet from creating
+    // thousands of fresh rooms; the service refuses before the disk notices.
+    if ((await countRooms()) >= config.maxRooms) {
+      return res.status(503).json({ error: 'notepad service is full' })
+    }
+
     const hashed = pin ? await hashPin(pin) : null
     const created = await createRoomRow(
       room,
@@ -137,7 +169,8 @@ router.post('/api/rooms', async (req, res) => {
     console.error('[rooms] create failed:', err)
     res.status(500).json({ error: 'could not create notepad' })
   }
-})
+  },
+)
 
 // Tells the client whether to show the unlock screen before it ever connects.
 router.get('/api/rooms/:room/access', async (req, res) => {
@@ -155,6 +188,29 @@ router.get('/api/rooms/:room/access', async (req, res) => {
   } catch (err) {
     console.error(`[rooms] access check ${room} failed:`, err)
     res.status(500).json({ error: 'could not check access' })
+  }
+})
+
+router.get('/api/rooms/:room/usage', requireRoomAccess, async (req, res) => {
+  const { room } = req.params
+  if (!isValidRoom(room)) return res.status(400).json({ error: 'bad room' })
+
+  try {
+    // Loaded rooms use cached sizes (the snapshot size is refreshed on every
+    // flush) so polling never re-encodes a large document.
+    const local = localUsage(room)
+    const noteBytes = local ? local.noteBytes : await noteBytesForRoom(room)
+    const fileBytes = local ? local.fileBytes : await fileBytesForRoom(room)
+
+    res.json({
+      noteBytes,
+      fileBytes,
+      used: noteBytes + fileBytes,
+      limit: config.maxNotepadBytes,
+    })
+  } catch (err) {
+    console.error(`[rooms] usage ${room} failed:`, err)
+    res.status(500).json({ error: 'could not read usage' })
   }
 })
 
@@ -240,7 +296,28 @@ if (config.basePath) {
 
 const server = http.createServer(app)
 
-const wss = new WebSocketServer({ noServer: true })
+// Slowloris resistance: drop requests that trickle in forever. Cloudflare
+// holds the real client connection, so these timers only see tunnel traffic.
+server.headersTimeout = 65_000
+server.requestTimeout = 120_000
+server.keepAliveTimeout = 61_000
+
+// maxPayload caps a single WS frame; Yjs updates and awareness frames are
+// bytes-to-kilobytes, so the configured ceiling (default 256KB) is generous.
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: config.wsMaxPayloadBytes,
+})
+
+// Live connection counts per client IP, so one visitor can't exhaust the
+// process with thousands of sockets. The tunnel is the only way in, so
+// CF-Connecting-IP (via clientIp) identifies real clients.
+const wsConnsByIp = new Map()
+const bumpIp = (ip, delta) => {
+  const next = (wsConnsByIp.get(ip) ?? 0) + delta
+  if (next <= 0) wsConnsByIp.delete(ip)
+  else wsConnsByIp.set(ip, next)
+}
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost')
@@ -263,28 +340,65 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy()
     return
   }
+  // Refuse before allocating a WebSocket. Closing after upgrade leaves the
+  // socket in the close handshake for up to 30 seconds; a flood of those
+  // handshakes could exceed the very ceiling this guard is meant to enforce.
+  const ip = clientIp(req)
+  if (
+    wss.clients.size >= config.wsMaxTotal ||
+    (wsConnsByIp.get(ip) ?? 0) >= config.wsMaxPerIp
+  ) {
+    socket.end(
+      'HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n',
+    )
+    return
+  }
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, room)
   })
 })
 
 wss.on('connection', async (ws, req, roomName) => {
+  // Defensive recheck, in case another path upgrades a socket later.
+  // Even refused sockets can emit a protocol error while their close frame is
+  // in flight, so attach this before any early return.
+  ws.on('error', () => ws.terminate())
+  const ip = clientIp(req)
+  if (wss.clients.size > config.wsMaxTotal) {
+    ws.close(1013, 'server busy')
+    return
+  }
+  if ((wsConnsByIp.get(ip) ?? 0) >= config.wsMaxPerIp) {
+    ws.close(1013, 'too many connections from your address')
+    return
+  }
+  bumpIp(ip, 1)
+
   const queued = []
   /** @type {any} */
   let room = null
   const controlledIds = new Set()
+  // Typing produces a handful of messages a second; the budget is far above
+  // human speed but far below what a flood needs to matter.
+  const messages = messageBucket(config.wsMsgPerSec * 2, config.wsMsgPerSec)
 
   ws.on('message', (data) => {
+    if (!messages()) {
+      ws.close(1008, 'message rate exceeded')
+      return
+    }
     // A fast client can send before the document finishes loading; hold those
-    // frames rather than dropping them.
+    // frames rather than dropping them. Bounded, so the queue itself can't
+    // become the memory problem.
     if (!room) {
-      queued.push(data)
+      if (queued.push(data) > 200) ws.close(1008, 'too fast')
       return
     }
     readMessage(ws, room, data, controlledIds)
   })
 
   ws.on('close', () => {
+    bumpIp(ip, -1)
     if (!room) return
     dropConnection(room, ws, controlledIds)
     if (room.conns.size === 0) {
@@ -293,8 +407,6 @@ wss.on('connection', async (ws, req, roomName) => {
       )
     }
   })
-
-  ws.on('error', () => ws.terminate())
 
   ws.isAlive = true
   ws.on('pong', () => {

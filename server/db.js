@@ -107,6 +107,14 @@ export async function saveRoomState(room, state) {
   )
 }
 
+export async function noteBytesForRoom(room) {
+  const { rows } = await pool.query(
+    'SELECT length(state) AS bytes FROM ydoc_state WHERE room = $1',
+    [room],
+  )
+  return Number(rows[0]?.bytes ?? 0)
+}
+
 export async function fileBytesForRoom(room) {
   const { rows } = await pool.query(
     'SELECT COALESCE(SUM(size), 0) AS bytes FROM room_files WHERE room = $1',
@@ -342,4 +350,17 @@ export async function isRoomDeleted(room) {
     [room],
   )
   return rows.length > 0
+}
+
+/** Global ceilings for the abuse limits in server/ratelimit.js wiring. */
+export async function countRooms() {
+  const { rows } = await pool.query('SELECT count(*) AS n FROM rooms')
+  return Number(rows[0]?.n ?? 0)
+}
+
+export async function totalFileBytes() {
+  const { rows } = await pool.query(
+    'SELECT COALESCE(SUM(size), 0) AS bytes FROM room_files',
+  )
+  return Number(rows[0]?.bytes ?? 0)
 }

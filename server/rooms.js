@@ -70,6 +70,8 @@ async function createRoom(name) {
     metaTimer: null,
     /** Cached attachment bytes, kept in step with upload/delete. */
     fileBytes: 0,
+    /** Encoded snapshot size as of the last successful save. */
+    noteBytes: 0,
     oversize: false,
     /** In-flight save, awaited before deleting so it can't resurrect the row. */
     saving: null,
@@ -80,6 +82,7 @@ async function createRoom(name) {
   const stored = await loadRoomState(name)
   // Applied before the update listener is attached: restoring state must not
   // count as a change, or every cold start would immediately rewrite the row.
+  room.noteBytes = stored?.length ?? 0
   if (stored) Y.applyUpdate(doc, stored, 'db')
 
   // Directory read model. Seeded on first load, then mirrored whenever the
@@ -156,6 +159,13 @@ function failOversize(room, noteBytes) {
   room.doc.destroy()
 }
 
+/** Cached usage for a loaded room, or null when it is not in memory. */
+export function localUsage(name) {
+  const room = rooms.get(name)
+  if (!room || room.deleted || room.oversize) return null
+  return { noteBytes: room.noteBytes, fileBytes: room.fileBytes }
+}
+
 /** Encoded size of the live document, or null when it is not loaded. */
 export function currentNoteBytes(name) {
   const room = rooms.get(name)
@@ -210,6 +220,7 @@ export async function flushRoom(room) {
   room.saving = saving
   try {
     await saving
+    room.noteBytes = state.length
   } finally {
     if (room.saving === saving) room.saving = null
   }

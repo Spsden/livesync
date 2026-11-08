@@ -73,6 +73,16 @@ function readAwarenessClientIds(update) {
 }
 
 export function readMessage(conn, room, data, controlledIds) {
+  // Malformed frames throw out of the decoders. Without this catch one
+  // garbage packet would take down the process; 1003 = unsupported data.
+  try {
+    readMessageUnsafe(conn, room, data, controlledIds)
+  } catch {
+    conn.close(1003, 'unsupported data')
+  }
+}
+
+function readMessageUnsafe(conn, room, data, controlledIds) {
   const decoder = decoding.createDecoder(new Uint8Array(data))
   const encoder = encoding.createEncoder()
   const messageType = decoding.readVarUint(decoder)
